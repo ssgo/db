@@ -7,8 +7,8 @@ import (
 	"github.com/ssgo/log"
 	"time"
 
-	"github.com/ssgo/utility"
 	"github.com/ssgo/config"
+	"github.com/ssgo/u"
 )
 
 type dbInfo struct {
@@ -77,7 +77,7 @@ func GetDB(name string) *DB {
 		conf.DB = "test"
 	}
 	if conf.Password != "" {
-		conf.Password = utility.DecryptAes(conf.Password, settedKey, settedIv)
+		conf.Password = u.DecryptAes(conf.Password, settedKey, settedIv)
 	} else {
 		//logWarn("password is empty", nil)
 		log.Warning("DB", "warning", "password is empty")
