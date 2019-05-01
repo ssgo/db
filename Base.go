@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/ssgo/log"
 	"reflect"
 	"strings"
-
-	"github.com/ssgo/log"
+	"time"
 )
 
 func basePrepare(db *sql.DB, tx *sql.Tx, requestSql string) *Stmt {
@@ -21,8 +21,6 @@ func basePrepare(db *sql.DB, tx *sql.Tx, requestSql string) *Stmt {
 		return &Stmt{Error: errors.New("operate on a bad connection")}
 	}
 	if err != nil {
-		//logError(err, &requestSql, nil)
-		log.Error("DB", "error", err, "sql", &requestSql)
 		return &Stmt{Error: err}
 	}
 	return &Stmt{conn: sqlStmt, lastSql: &requestSql}
@@ -31,39 +29,39 @@ func basePrepare(db *sql.DB, tx *sql.Tx, requestSql string) *Stmt {
 func baseExec(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *ExecResult {
 	var r sql.Result
 	var err error
+	startTime := time.Now()
 	if tx != nil {
 		r, err = tx.Exec(requestSql, args...)
 	} else if db != nil {
 		r, err = db.Exec(requestSql, args...)
 	} else {
-		return &ExecResult{Sql: &requestSql, Args: args, Error: errors.New("operate on a bad connection")}
+		return &ExecResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, time.Now()), Error: errors.New("operate on a bad connection")}
 	}
+	endTime := time.Now()
 
 	if err != nil {
-		//logError(err, &requestSql, args)
-		log.Error("DB", "error", err, "sql", &requestSql, "args", args)
-		return &ExecResult{Sql: &requestSql, Args: args, Error: err}
+		return &ExecResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), Error: err}
 	}
-	return &ExecResult{Sql: &requestSql, Args: args, result: r}
+	return &ExecResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), result: r}
 }
 
 func baseQuery(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *QueryResult {
 	var rows *sql.Rows
 	var err error
+	startTime := time.Now()
 	if tx != nil {
 		rows, err = tx.Query(requestSql, args...)
 	} else if db != nil {
 		rows, err = db.Query(requestSql, args...)
 	} else {
-		return &QueryResult{Sql: &requestSql, Args: args, Error: errors.New("operate on a bad connection")}
+		return &QueryResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, time.Now()), Error: errors.New("operate on a bad connection")}
 	}
+	endTime := time.Now()
 
 	if err != nil {
-		//logError(err, &requestSql, args)
-		log.Error("DB", "error", err, "sql", &requestSql, "args", args)
-		return &QueryResult{Sql: &requestSql, Args: args, Error: err}
+		return &QueryResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), Error: err}
 	}
-	return &QueryResult{Sql: &requestSql, Args: args, rows: rows}
+	return &QueryResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), rows: rows}
 }
 
 func makeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {

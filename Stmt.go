@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/ssgo/log"
+	"time"
 )
 
 type Stmt struct {
@@ -11,20 +12,23 @@ type Stmt struct {
 	lastSql  *string
 	lastArgs []interface{}
 	Error    error
+	logger *dbLogger
 }
 
 func (stmt *Stmt) Exec(args ...interface{}) *ExecResult {
 	stmt.lastArgs = args
 	if stmt.conn == nil {
-		return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, Error: errors.New("operate on a bad connection")}
+		return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, usedTime: -1, logger: stmt.logger, Error: errors.New("operate on a bad connection")}
 	}
+	startTime := time.Now()
 	r, err := stmt.conn.Exec(args...)
+	endTime := time.Now()
 	if err != nil {
 		//logError(err, stmt.lastSql, stmt.lastArgs)
-		log.Error("DB", "error", err, "sql", stmt.lastSql, "args", stmt.lastArgs)
-		return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, Error: err}
+		stmt.logger.LogQueryError(err.Error(), *stmt.lastSql, stmt.lastArgs, log.MakeUesdTime(startTime, endTime))
+		return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, usedTime: log.MakeUesdTime(startTime, endTime), logger: stmt.logger, Error: err}
 	}
-	return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, result: r}
+	return &ExecResult{Sql: stmt.lastSql, Args: stmt.lastArgs, usedTime: log.MakeUesdTime(startTime, endTime), logger: stmt.logger, result: r}
 }
 
 func (stmt *Stmt) Close() error {
@@ -32,9 +36,8 @@ func (stmt *Stmt) Close() error {
 		return errors.New("operate on a bad connection")
 	}
 	err := stmt.conn.Close()
-	//logError(err, stmt.lastSql, stmt.lastArgs)
 	if err != nil {
-		log.Error("DB", "error", err, "sql", stmt.lastSql, "args", stmt.lastArgs)
+		stmt.logger.LogQueryError(err.Error(), *stmt.lastSql, stmt.lastArgs, -1)
 	}
 	return err
 }

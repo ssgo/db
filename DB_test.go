@@ -1,6 +1,8 @@
 package db
 
 import (
+	"github.com/ssgo/log"
+	"github.com/ssgo/u"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +21,8 @@ type userInfo struct {
 func TestBaseSelect(t *testing.T) {
 
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test")
+	db := GetDB("test", nil)
+	db.Config.LogSlow = -1
 	if db.Error != nil {
 		t.Error("GetDB error", db.Error)
 		return
@@ -276,7 +279,7 @@ func TestTransaction(t *testing.T) {
 }
 
 func initDB(t *testing.T) *DB {
-	db := GetDB("test")
+	db := GetDB("test", log.New(u.ShortUniqueId()))
 	if db.Error != nil {
 		t.Error("GetDB error", db)
 		return nil
@@ -307,7 +310,7 @@ func BenchmarkForPool(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test")
+	db := GetDB("test", nil)
 	if db.Error != nil {
 		b.Error("GetDB error", db)
 		return
@@ -332,7 +335,7 @@ func BenchmarkForPoolParallel(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test")
+	db := GetDB("test", nil)
 	if db.Error != nil {
 		b.Error("GetDB error", db)
 		return

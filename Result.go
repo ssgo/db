@@ -4,22 +4,25 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ssgo/log"
 	"reflect"
 )
 
 type QueryResult struct {
-	rows  *sql.Rows
-	Sql   *string
-	Args  []interface{}
-	Error error
+	rows     *sql.Rows
+	Sql      *string
+	Args     []interface{}
+	Error    error
+	logger   *dbLogger
+	usedTime float32
 }
 
 type ExecResult struct {
-	result sql.Result
-	Sql    *string
-	Args   []interface{}
-	Error  error
+	result   sql.Result
+	Sql      *string
+	Args     []interface{}
+	Error    error
+	logger   *dbLogger
+	usedTime float32
 }
 
 func (r *ExecResult) Changes() int64 {
@@ -28,8 +31,7 @@ func (r *ExecResult) Changes() int64 {
 	}
 	numChanges, err := r.result.RowsAffected()
 	if err != nil {
-		//logError(err, r.Sql, r.Args)
-		log.Error("DB", "error", err, "sql", r.Sql, "args", r.Args)
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
 		return 0
 	}
 	return numChanges
@@ -41,8 +43,7 @@ func (r *ExecResult) Id() int64 {
 	}
 	insertId, err := r.result.LastInsertId()
 	if err != nil {
-		//logError(err, r.Sql, r.Args)
-		log.Error("DB", "error", err, "sql", r.Sql, "args", r.Args)
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
 		return 0
 	}
 	return insertId
@@ -57,72 +58,102 @@ func (r *QueryResult) To(result interface{}) error {
 
 func (r *QueryResult) MapResults() []map[string]interface{} {
 	result := make([]map[string]interface{}, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) SliceResults() [][]interface{} {
 	result := make([][]interface{}, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) StringMapResults() []map[string]string {
 	result := make([]map[string]string, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) StringSliceResults() [][]string {
 	result := make([][]string, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) MapOnR1() map[string]interface{} {
 	result := make(map[string]interface{})
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) SliceOnR1() []interface{} {
 	result := make([]interface{}, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) IntsOnC1() []int64 {
 	result := make([]int64, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) StringsOnC1() []string {
 	result := make([]string, 0)
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) IntOnR1C1() int64 {
 	var result int64 = 0
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) StringOnR1C1() string {
 	result := ""
-	r.makeResults(&result, r.rows)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
 	return result
 }
 
 func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	rowType := reflect.TypeOf(results)
 	resultsValue := reflect.ValueOf(results)
 	if rowType.Kind() != reflect.Ptr {
 		err := fmt.Errorf("results must be a pointer")
-		//logError(err, r.Sql, r.Args)
-		log.Error("DB", "error", err, "sql", r.Sql, "args", r.Args)
 		return err
 	}
 	rowType = rowType.Elem()
@@ -130,8 +161,6 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 
 	colTypes, err := rows.ColumnTypes()
 	if err != nil {
-		//logError(err, r.Sql, r.Args)
-		log.Error("DB", "error", err, "sql", r.Sql, "args", r.Args)
 		return err
 	}
 
@@ -192,8 +221,6 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 
 		err = rows.Scan(scanValues...)
 		if err != nil {
-			//logError(err, r.Sql, r.Args)
-			log.Error("DB", "error", err, "sql", r.Sql, "args", r.Args)
 			return err
 		}
 		if rowType.Kind() == reflect.Struct {
@@ -243,9 +270,6 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 	}
 
 	reflect.ValueOf(results).Elem().Set(resultsValue)
-	//if r.conn.Stats().OpenConnections > 1 {
-	//	fmt.Println("conns:", r.conn.Stats().OpenConnections)
-	//}
 	return nil
 }
 

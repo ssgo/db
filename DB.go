@@ -20,11 +20,22 @@ type dbInfo struct {
 	MaxOpens    int
 	MaxIdles    int
 	MaxLifeTime int
+	LogSlow     int
+}
+
+func (conf *dbInfo) Dsn() string {
+	connectType := "tcp"
+	if []byte(conf.Host)[0] == '/' {
+		connectType = "unix"
+	}
+	return fmt.Sprintf("%s:****@%s(%s)/%s", conf.User, connectType, conf.Host, conf.DB)
 }
 
 type DB struct {
-	conn  *sql.DB
-	Error error
+	conn   *sql.DB
+	Config *dbInfo
+	logger *dbLogger
+	Error  error
 }
 
 // var settedKey = []byte("vpL54DlR2KG{JSAaAX7Tu;*#&DnG`M0o")
@@ -41,22 +52,42 @@ func SetEncryptKeys(key, iv []byte) {
 	}
 }
 
-//var enabledLogs = true
-//
-//func EnableLogs(enabled bool) {
-//	enabledLogs = enabled
-//}
+type dbLogger struct {
+	config *dbInfo
+	logger *log.Logger
+}
+
+func (dl *dbLogger) LogError(error string) {
+	dl.logger.DBError(error, dl.config.Type, dl.config.Dsn(), "", nil, 0)
+}
+
+func (dl *dbLogger) LogQuery(query string, args []interface{}, usedTime float32) {
+	dl.logger.DB(dl.config.Type, dl.config.Dsn(), query, args, usedTime)
+}
+
+func (dl *dbLogger) LogQueryError(error string, query string, args []interface{}, usedTime float32) {
+	dl.logger.DBError(error, dl.config.Type, dl.config.Dsn(), query, args, usedTime)
+}
 
 var dbConfigs = make(map[string]*dbInfo)
 var dbInstances = make(map[string]*DB)
 
-func GetDB(name string) *DB {
+func GetDB(name string, logger *log.Logger) *DB {
+	if logger == nil {
+		logger = log.DefaultLogger
+	}
+
 	if dbInstances[name] != nil {
-		return dbInstances[name]
+		return copyByLogger(dbInstances[name], logger)
 	}
 
 	if len(dbConfigs) == 0 {
-		config.LoadConfig("db", &dbConfigs)
+		errs := config.LoadConfig("db", &dbConfigs)
+		if errs != nil {
+			for _, err := range errs {
+				logger.Error(err.Error())
+			}
+		}
 	}
 
 	conf := dbConfigs[name]
@@ -76,28 +107,30 @@ func GetDB(name string) *DB {
 	if conf.DB == "" {
 		conf.DB = "test"
 	}
+
+	decryptedPassword := ""
 	if conf.Password != "" {
-		conf.Password = u.DecryptAes(conf.Password, settedKey, settedIv)
+		decryptedPassword = u.DecryptAes(conf.Password, settedKey, settedIv)
 	} else {
 		//logWarn("password is empty", nil)
-		log.Warning("DB", "warning", "password is empty")
+		logger.Warning("password is empty")
 	}
+	conf.Password = u.UniqueId()
 
 	connectType := "tcp"
 	if []byte(conf.Host)[0] == '/' {
 		connectType = "unix"
 	}
 
-	conn, err := sql.Open(conf.Type, fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, conf.Password, connectType, conf.Host, conf.DB))
+	conn, err := sql.Open(conf.Type, fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, decryptedPassword, connectType, conf.Host, conf.DB))
 	if err != nil {
-		info := fmt.Sprintf("%s:%s***@%s(%s)/%s", conf.User, conf.Password[0:5], connectType, conf.Host, conf.DB)
-		//logError(err, &info, nil)
-		log.Error("DB", "error", err, "sql", &info)
+		logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 		return &DB{conn: nil, Error: err}
 	}
 	db := new(DB)
 	db.conn = conn
 	db.Error = nil
+	db.Config = conf
 	if conf.MaxIdles > 0 {
 		conn.SetMaxIdleConns(conf.MaxIdles)
 	}
@@ -107,8 +140,22 @@ func GetDB(name string) *DB {
 	if conf.MaxLifeTime > 0 {
 		conn.SetConnMaxLifetime(time.Second * time.Duration(conf.MaxLifeTime))
 	}
+	if conf.LogSlow == 0 {
+		conf.LogSlow = 1000
+	}
 	dbInstances[name] = db
-	return db
+	return copyByLogger(db, logger)
+}
+
+func copyByLogger(fromDB *DB, logger *log.Logger) *DB {
+	newDB := new(DB)
+	newDB.conn = fromDB.conn
+	newDB.Config = fromDB.Config
+	if logger == nil {
+		logger = log.DefaultLogger
+	}
+	newDB.logger = &dbLogger{logger: logger, config: fromDB.Config}
+	return newDB
 }
 
 func (db *DB) Destroy() error {
@@ -118,7 +165,7 @@ func (db *DB) Destroy() error {
 	err := db.conn.Close()
 	//logError(err, nil, nil)
 	if err != nil {
-		log.Error("DB", "error", err)
+		db.logger.LogError(err.Error())
 	}
 	return err
 }
@@ -131,40 +178,94 @@ func (db *DB) GetOriginDB() *sql.DB {
 }
 
 func (db *DB) Prepare(requestSql string) *Stmt {
-	return basePrepare(db.conn, nil, requestSql)
+	stmt := basePrepare(db.conn, nil, requestSql)
+	stmt.logger = db.logger
+	if stmt.Error != nil {
+		db.logger.LogError(stmt.Error.Error())
+	}
+	return stmt
 }
 
 func (db *DB) Begin() *Tx {
 	if db.conn == nil {
-		return &Tx{Error: errors.New("operate on a bad connection")}
+		return &Tx{logSlow: db.Config.LogSlow, Error: errors.New("operate on a bad connection"), logger: db.logger}
 	}
 	sqlTx, err := db.conn.Begin()
 	if err != nil {
-		//logError(err, nil, nil)
-		log.Error("DB", "error", err)
-		return &Tx{Error: nil}
+		db.logger.LogError(err.Error())
+		return &Tx{logSlow: db.Config.LogSlow, Error: nil, logger: db.logger}
 	}
-	return &Tx{conn: sqlTx}
+	return &Tx{logSlow: db.Config.LogSlow, conn: sqlTx, logger: db.logger}
 }
 
 func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
-	return baseExec(db.conn, nil, requestSql, args...)
+	r := baseExec(db.conn, nil, requestSql, args...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
+	} else {
+		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, args, r.usedTime)
+		}
+	}
+	return r
 }
 
 func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
-	return baseQuery(db.conn, nil, requestSql, args...)
+	r := baseQuery(db.conn, nil, requestSql, args...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
+	} else {
+		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, args, r.usedTime)
+		}
+	}
+	return r
 }
 
 func (db *DB) Insert(table string, data interface{}) *ExecResult {
 	requestSql, values := makeInsertSql(table, data, false)
-	return baseExec(db.conn, nil, requestSql, values...)
+	r := baseExec(db.conn, nil, requestSql, values...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
+	} else {
+		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, values, r.usedTime)
+		}
+	}
+	return r
 }
 func (db *DB) Replace(table string, data interface{}) *ExecResult {
 	requestSql, values := makeInsertSql(table, data, true)
-	return baseExec(db.conn, nil, requestSql, values...)
+	r := baseExec(db.conn, nil, requestSql, values...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
+	} else {
+		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, values, r.usedTime)
+		}
+	}
+	return r
 }
 
 func (db *DB) Update(table string, data interface{}, wheres string, args ...interface{}) *ExecResult {
 	requestSql, values := makeUpdateSql(table, data, wheres, args...)
-	return baseExec(db.conn, nil, requestSql, values...)
+	r := baseExec(db.conn, nil, requestSql, values...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
+	} else {
+		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, values, r.usedTime)
+		}
+	}
+	return r
 }
