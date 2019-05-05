@@ -158,6 +158,14 @@ func copyByLogger(fromDB *DB, logger *log.Logger) *DB {
 	return newDB
 }
 
+func (db *DB) SetLogger(logger *log.Logger) {
+	db.logger.logger = logger
+}
+
+func (db *DB) GetLogger() *log.Logger {
+	return db.logger.logger
+}
+
 func (db *DB) Destroy() error {
 	if db.conn == nil {
 		return errors.New("operate on a bad connection")
