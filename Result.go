@@ -147,6 +147,10 @@ func (r *QueryResult) StringOnR1C1() string {
 }
 
 func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
+	if rows == nil {
+		return errors.New("not a valid query result")
+	}
+
 	defer func() {
 		_ = rows.Close()
 	}()
