@@ -231,14 +231,16 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 	defer func() {
 		_ = rows.Close()
 	}()
-	rowType := reflect.TypeOf(results)
 	resultsValue := reflect.ValueOf(results)
-	if rowType.Kind() != reflect.Ptr {
+	if resultsValue.Kind() != reflect.Ptr {
 		err := fmt.Errorf("results must be a pointer")
 		return err
 	}
-	rowType = rowType.Elem()
-	resultsValue = resultsValue.Elem()
+
+	for resultsValue.Kind() == reflect.Ptr {
+		resultsValue = resultsValue.Elem()
+	}
+	rowType := resultsValue.Type()
 
 	colTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -246,9 +248,14 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 	}
 
 	colNum := len(colTypes)
+	originRowType := rowType
 	if rowType.Kind() == reflect.Slice {
 		// 处理数组类型，非数组类型表示只取一行数据
 		rowType = rowType.Elem()
+		originRowType = rowType
+		for rowType.Kind() == reflect.Ptr {
+			rowType = rowType.Elem()
+		}
 	}
 
 	scanValues := make([]interface{}, colNum)
@@ -343,7 +350,11 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 		}
 
 		if resultsValue.Kind() == reflect.Slice {
-			resultsValue = reflect.Append(resultsValue, data)
+			if originRowType.Kind() == reflect.Ptr{
+				resultsValue = reflect.Append(resultsValue, data.Addr())
+			}else {
+				resultsValue = reflect.Append(resultsValue, data)
+			}
 		} else {
 			resultsValue = data
 			break
@@ -376,7 +387,7 @@ func makeValue(t reflect.Type) interface{} {
 	if t == nil {
 		return new(*string)
 	}
-	if t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
