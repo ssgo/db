@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/mitchellh/mapstructure"
+	"github.com/ssgo/u"
 	"reflect"
 )
 
@@ -146,6 +148,81 @@ func (r *QueryResult) StringOnR1C1() string {
 	return result
 }
 
+func (r *QueryResult) ToKV(target interface{}) {
+	v := reflect.ValueOf(target)
+	t := v.Type()
+	for t.Kind() == reflect.Ptr {
+		v = v.Elem()
+		t = v.Type()
+	}
+
+	if t.Kind() != reflect.Map {
+		r.logger.LogQueryError("target not a map", *r.Sql, r.Args, r.usedTime)
+		return
+	}
+
+	vt := t.Elem()
+	if vt.Kind() == reflect.Map || vt.Kind() == reflect.Struct {
+		colTypes, err := r.getColumnTypes()
+		list := r.MapResults()
+		if err != nil {
+			r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+			return
+		} else {
+			for _, item := range list {
+				if vt.Kind() == reflect.Struct {
+					newValue := reflect.New(vt)
+					err := mapstructure.WeakDecode(item, newValue.Interface())
+					if err != nil {
+						r.logger.LogError(err.Error())
+					} else {
+						v.SetMapIndex(reflect.ValueOf(u.String(item[colTypes[0].Name()])), newValue.Elem())
+					}
+				}
+			}
+		}
+	} else {
+		list := r.SliceResults()
+		for _, item := range list {
+			if len(item) < 2 {
+				continue
+			}
+			switch vt.Kind() {
+			case reflect.Int:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Int(item[1])))
+			case reflect.Int8:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(int8(u.Int(item[1]))))
+			case reflect.Int16:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(int16(u.Int(item[1]))))
+			case reflect.Int32:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(int32(u.Int(item[1]))))
+			case reflect.Int64:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Int64(item[1])))
+			case reflect.Uint:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(uint(u.Int(item[1]))))
+			case reflect.Uint8:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(uint8(u.Int(item[1]))))
+			case reflect.Uint16:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(uint16(u.Int(item[1]))))
+			case reflect.Uint32:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(uint32(u.Int(item[1]))))
+			case reflect.Uint64:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(uint64(u.Int64(item[1]))))
+			case reflect.Float32:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Float(item[1])))
+			case reflect.Float64:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Float64(item[1])))
+			case reflect.Bool:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Bool(item[1])))
+			case reflect.String:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.String(item[1])))
+			}
+		}
+	}
+
+	return
+}
+
 func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 	if rows == nil {
 		return errors.New("not a valid query result")
@@ -275,6 +352,14 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 
 	reflect.ValueOf(results).Elem().Set(resultsValue)
 	return nil
+}
+
+func (r *QueryResult) getColumnTypes() ([]*sql.ColumnType, error) {
+	if r.rows == nil {
+		return nil, errors.New("not a valid query result")
+	}
+
+	return r.rows.ColumnTypes()
 }
 
 func makePublicVarName(name string) string {

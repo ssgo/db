@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ssgo/log"
+	"strings"
 	"time"
 
 	"github.com/ssgo/config"
@@ -24,11 +25,15 @@ type dbInfo struct {
 }
 
 func (conf *dbInfo) Dsn() string {
-	connectType := "tcp"
-	if []byte(conf.Host)[0] == '/' {
-		connectType = "unix"
+	if strings.HasPrefix(conf.Type, "sqlite") {
+		return conf.Host
+	} else {
+		connectType := "tcp"
+		if []byte(conf.Host)[0] == '/' {
+			connectType = "unix"
+		}
+		return fmt.Sprintf("%s:****@%s(%s)/%s", conf.User, connectType, conf.Host, conf.DB)
 	}
-	return fmt.Sprintf("%s:****@%s(%s)/%s", conf.User, connectType, conf.Host, conf.DB)
 }
 
 type DB struct {
@@ -108,12 +113,16 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.DB = "test"
 	}
 
+	isSqlite := strings.HasPrefix(conf.Type, "sqlite")
+
 	decryptedPassword := ""
 	if conf.Password != "" {
 		decryptedPassword = u.DecryptAes(conf.Password, settedKey, settedIv)
 	} else {
-		//logWarn("password is empty", nil)
-		logger.Warning("password is empty")
+		if !isSqlite {
+			//logWarn("password is empty", nil)
+			logger.Warning("password is empty")
+		}
 	}
 	conf.Password = u.UniqueId()
 
@@ -122,7 +131,13 @@ func GetDB(name string, logger *log.Logger) *DB {
 		connectType = "unix"
 	}
 
-	conn, err := sql.Open(conf.Type, fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, decryptedPassword, connectType, conf.Host, conf.DB))
+	dsn := ""
+	if isSqlite {
+		dsn = conf.Host
+	} else {
+		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, decryptedPassword, connectType, conf.Host, conf.DB)
+	}
+	conn, err := sql.Open(conf.Type, dsn)
 	if err != nil {
 		logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 		return &DB{conn: nil, Error: err}
