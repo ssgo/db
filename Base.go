@@ -108,7 +108,7 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 				v = v.Elem()
 			}
 			keys = append(keys, dataType.Field(i).Name)
-			if v.Kind() == reflect.String && []byte(v.String())[0] == ':' {
+			if v.Kind() == reflect.String && v.Len() > 0 && []byte(v.String())[0] == ':' {
 				vars = append(vars, string([]byte(v.String())[1:]))
 			} else {
 				vars = append(vars, "?")

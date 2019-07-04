@@ -18,6 +18,31 @@ type userInfo struct {
 	Time  string
 }
 
+type UserModel struct {
+	Id         int
+	Name       string
+	Phone      string
+	Password   string
+	UserStatus int
+	Owner      int
+	Salt       string
+}
+
+func TestMakeInsertSql(t *testing.T) {
+
+	user := &UserModel{
+		Name:       "王二小",
+		UserStatus: 1, //正常,
+		Password:   "2121asds",
+		Salt:       "de312",
+	}
+
+	requestSql, _ := makeInsertSql("table_name", user, false)
+	if requestSql != "insert into `table_name` (`Id`,`Name`,`Phone`,`Password`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?)" {
+		t.Error("MakeInsertSql requestSql error ")
+	}
+}
+
 func TestBaseSelect(t *testing.T) {
 
 	sql := "SELECT 1002 id, '13800000001' phone"
