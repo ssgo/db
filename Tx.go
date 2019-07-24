@@ -31,6 +31,9 @@ func (tx *Tx) Rollback() error {
 	}
 	err := tx.conn.Rollback()
 	//logError(err.Error(), *tx.lastSql, tx.lastArgs)
+	if err == sql.ErrTxDone {
+		return nil
+	}
 	if err != nil {
 		tx.logger.LogQueryError(err.Error(), *tx.lastSql, tx.lastArgs, -1)
 	}
@@ -38,6 +41,7 @@ func (tx *Tx) Rollback() error {
 }
 
 func (tx *Tx) Prepare(requestSql string) *Stmt {
+	tx.lastSql = &requestSql
 	r := basePrepare(nil, tx.conn, requestSql)
 	r.logger = tx.logger
 	if r.Error != nil {
