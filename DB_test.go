@@ -281,7 +281,7 @@ func TestTransaction(t *testing.T) {
 
 	tx = db.Begin()
 	defer func() {
-		if err := tx.Rollback(); err != nil {
+		if err := tx.Finish(); err != nil {
 			t.Error("tx rollback error", err)
 		}
 		finishDB(db, t)
