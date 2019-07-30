@@ -6,12 +6,13 @@ import (
 )
 
 type Tx struct {
-	conn     *sql.Tx
-	lastSql  *string
-	lastArgs []interface{}
-	Error    error
-	logger   *dbLogger
-	logSlow  int
+	conn                   *sql.Tx
+	lastSql                *string
+	lastArgs               []interface{}
+	Error                  error
+	logger                 *dbLogger
+	logSlow                int
+	isCommitedOrRollbacked bool
 }
 
 func (tx *Tx) Commit() error {
@@ -21,6 +22,8 @@ func (tx *Tx) Commit() error {
 	err := tx.conn.Commit()
 	if err != nil {
 		tx.logger.LogQueryError(err.Error(), *tx.lastSql, tx.lastArgs, -1)
+	} else {
+		tx.isCommitedOrRollbacked = true
 	}
 	return err
 }
@@ -33,11 +36,21 @@ func (tx *Tx) Rollback() error {
 	//logError(err.Error(), *tx.lastSql, tx.lastArgs)
 	if err != nil {
 		tx.logger.LogQueryError(err.Error(), *tx.lastSql, tx.lastArgs, -1)
+	} else {
+		tx.isCommitedOrRollbacked = true
 	}
 	return err
 }
 
+func (tx *Tx) Finish() error {
+	if tx.isCommitedOrRollbacked {
+		return nil
+	}
+	return tx.Rollback()
+}
+
 func (tx *Tx) Prepare(requestSql string) *Stmt {
+	tx.lastSql = &requestSql
 	r := basePrepare(nil, tx.conn, requestSql)
 	r.logger = tx.logger
 	if r.Error != nil {

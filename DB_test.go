@@ -280,6 +280,12 @@ func TestTransaction(t *testing.T) {
 	}
 
 	tx = db.Begin()
+	defer func() {
+		if err := tx.Finish(); err != nil {
+			t.Error("tx rollback error", err)
+		}
+		finishDB(db, t)
+	}()
 	if tx.Error != nil {
 		t.Error("Begin 2 error", tx)
 	}
@@ -300,7 +306,6 @@ func TestTransaction(t *testing.T) {
 		t.Error("Select When Commit", userList, r)
 	}
 
-	finishDB(db, t)
 }
 
 func initDB(t *testing.T) *DB {

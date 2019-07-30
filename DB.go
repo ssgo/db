@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/ssgo/config"
 	"github.com/ssgo/log"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/ssgo/config"
 	"github.com/ssgo/u"
 )
 
@@ -76,6 +77,7 @@ func (dl *dbLogger) LogQueryError(error string, query string, args []interface{}
 
 var dbConfigs = make(map[string]*dbInfo)
 var dbInstances = make(map[string]*DB)
+var once sync.Once
 
 func GetDB(name string, logger *log.Logger) *DB {
 	if logger == nil {
@@ -87,14 +89,15 @@ func GetDB(name string, logger *log.Logger) *DB {
 	}
 
 	if len(dbConfigs) == 0 {
-		errs := config.LoadConfig("db", &dbConfigs)
-		if errs != nil {
-			for _, err := range errs {
-				logger.Error(err.Error())
+		once.Do(func() {
+			errs := config.LoadConfig("db", &dbConfigs)
+			if errs != nil {
+				for _, err := range errs {
+					logger.Error(err.Error())
+				}
 			}
-		}
+		})
 	}
-
 	conf := dbConfigs[name]
 	if conf == nil {
 		conf = new(dbInfo)
