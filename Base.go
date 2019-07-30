@@ -88,6 +88,19 @@ func makeUpdateSql(table string, data interface{}, wheres string, args ...interf
 	return requestSql, values
 }
 
+func getFlatFields(fields map[string]reflect.Value, fieldKeys *[]string, value reflect.Value) {
+	valueType := value.Type()
+	for i := 0; i < value.NumField(); i++ {
+		v := value.Field(i)
+		if valueType.Field(i).Anonymous {
+			getFlatFields(fields, fieldKeys, v)
+		} else {
+			*fieldKeys = append(*fieldKeys, valueType.Field(i).Name)
+			fields[valueType.Field(i).Name] = v
+		}
+	}
+}
+
 func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 	keys := make([]string, 0)
 	vars := make([]string, 0)
@@ -102,12 +115,16 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 
 	if dataType.Kind() == reflect.Struct {
 		// 按结构处理数据
-		for i := 0; i < dataType.NumField(); i++ {
-			v := dataValue.Field(i)
+		fields := make(map[string]reflect.Value)
+		fieldKeys := make([]string, 0)
+		getFlatFields(fields, &fieldKeys, dataValue)
+		//for i := 0; i < dataType.NumField(); i++ {
+		for _, k := range fieldKeys {
+			v := fields[k]
 			if v.Kind() == reflect.Interface {
 				v = v.Elem()
 			}
-			keys = append(keys, dataType.Field(i).Name)
+			keys = append(keys, k)
 			if v.Kind() == reflect.String && v.Len() > 0 && []byte(v.String())[0] == ':' {
 				vars = append(vars, string([]byte(v.String())[1:]))
 			} else {

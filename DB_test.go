@@ -11,18 +11,24 @@ import (
 )
 
 type userInfo struct {
-	Id    int
-	Name  string
-	Phone string
-	Email string
-	Time  string
+	Id     int
+	Name   string
+	Phone  string
+	Email  string
+	Active bool
+	Time   string
+}
+
+type UserBaseModel struct {
+	Id       int
+	Name     string
+	Password string
 }
 
 type UserModel struct {
-	Id         int
-	Name       string
+	UserBaseModel
 	Phone      string
-	Password   string
+	Active     bool
 	UserStatus int
 	Owner      int
 	Salt       string
@@ -31,15 +37,18 @@ type UserModel struct {
 func TestMakeInsertSql(t *testing.T) {
 
 	user := &UserModel{
-		Name:       "王二小",
+		UserBaseModel: UserBaseModel{
+			Name: "王二小",
+			Password:   "2121asds",
+		},
+		Active:     true,
 		UserStatus: 1, //正常,
-		Password:   "2121asds",
 		Salt:       "de312",
 	}
 
 	requestSql, _ := makeInsertSql("table_name", user, false)
-	if requestSql != "insert into `table_name` (`Id`,`Name`,`Phone`,`Password`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?)" {
-		t.Error("MakeInsertSql requestSql error ")
+	if requestSql != "insert into `table_name` (`Id`,`Name`,`Password`,`Phone`,`Active`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?,?)" {
+		t.Fatal("MakeInsertSql requestSql error ", requestSql)
 	}
 }
 
@@ -49,94 +58,94 @@ func TestBaseSelect(t *testing.T) {
 	db := GetDB("test", nil)
 	db.Config.LogSlow = -1
 	if db.Error != nil {
-		t.Error("GetDB error", db.Error)
+		t.Fatal("GetDB error", db.Error)
 		return
 	}
 
 	//results1 := make([]map[string]interface{}, 0)
 	r := db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, r)
+		t.Fatal("Query error", sql, r)
 	}
 	results1 := r.MapResults()
 	if results1[0]["id"].(int64) != 1002 || results1[0]["phone"].(string) != "13800000001" {
-		t.Error("Result error", sql, results1, r)
+		t.Fatal("Result error", sql, results1, r)
 	}
 
 	//results2 := make([]map[string]string, 0)
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, r)
+		t.Fatal("Query error", sql, r)
 	}
 	results2 := r.StringMapResults()
 	if results2[0]["id"] != "1002" || results2[0]["phone"] != "13800000001" {
-		t.Error("Result error", sql, results2, r)
+		t.Fatal("Result error", sql, results2, r)
 	}
 
 	results3 := make([]map[string]int, 0)
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, results3, r)
+		t.Fatal("Query error", sql, results3, r)
 	}
 	r.To(&results3)
 	if results3[0]["id"] != 1002 || results3[0]["phone"] != 13800000001 {
-		t.Error("Result error", sql, results3, r)
+		t.Fatal("Result error", sql, results3, r)
 	}
 
 	results4 := make([]userInfo, 0)
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, results4, r)
+		t.Fatal("Query error", sql, results4, r)
 	}
 	r.To(&results4)
 	if results4[0].Id != 1002 || results4[0].Phone != "13800000001" {
-		t.Error("Result error", sql, results4, r)
+		t.Fatal("Result error", sql, results4, r)
 	}
 
 	//results5 := make([][]string, 0)
 	results5 := db.Query(sql).StringSliceResults()
 	if results5[0][0] != "1002" || results5[0][1] != "13800000001" {
-		t.Error("Result error", sql, results5, r)
+		t.Fatal("Result error", sql, results5, r)
 	}
 
 	//results6 := make([]string, 0)
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, r)
+		t.Fatal("Query error", sql, r)
 	}
 	results6 := r.StringsOnC1()
 	if results6[0] != "1002" {
-		t.Error("Result error", sql, results6, r)
+		t.Fatal("Result error", sql, results6, r)
 	}
 
 	//results7 := map[string]interface{}{}
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, r)
+		t.Fatal("Query error", sql, r)
 	}
 	results7 := r.MapOnR1()
 	if results7["id"].(int64) != 1002 || results7["phone"] != "13800000001" {
-		t.Error("Result error", sql, results7, r)
+		t.Fatal("Result error", sql, results7, r)
 	}
 
 	results8 := userInfo{}
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, results8, r)
+		t.Fatal("Query error", sql, results8, r)
 	}
 	r.To(&results8)
 	if results8.Id != 1002 || results8.Phone != "13800000001" {
-		t.Error("Result error", sql, results8, r)
+		t.Fatal("Result error", sql, results8, r)
 	}
 
 	//var results9 int
 	r = db.Query(sql)
 	if r.Error != nil {
-		t.Error("Query error", sql, r)
+		t.Fatal("Query error", sql, r)
 	}
 	results9 := r.IntOnR1C1()
 	if results9 != 1002 {
-		t.Error("Result error", sql, results9, r)
+		t.Fatal("Result error", sql, results9, r)
 	}
 
 	//t.Log("OpenConnections", db.GetOriginDB().Stats().OpenConnections)
@@ -150,21 +159,22 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		"time":  ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
 	})
 	if er.Error != nil {
-		t.Error("Insert 1 error", er)
+		t.Fatal("Insert 1 error", er)
 	}
 	if er.Id() != 1 {
-		t.Error("insertId 1 error", er, er.Id())
+		t.Fatal("insertId 1 error", er, er.Id())
 	}
 
 	er = db.Insert("tempUsersForDBTest", map[string]interface{}{
-		"phone": "18000000002",
-		"name":  "Tom",
+		"phone":  "18000000002",
+		"name":   "Tom",
+		"active": true,
 	})
 	if er.Error != nil {
-		t.Error("Insert 2 error", er)
+		t.Fatal("Insert 2 error", er)
 	}
 	if er.Id() != 2 {
-		t.Error("insertId 2 error", er, er.Id())
+		t.Fatal("insertId 2 error", er, er.Id())
 	}
 
 	er = db.Update("tempUsersForDBTest", map[string]interface{}{
@@ -172,10 +182,10 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		"name":  "Tom Lee",
 	}, "id=?", 2)
 	if er.Error != nil {
-		t.Error("Update 2 error", er)
+		t.Fatal("Update 2 error", er)
 	}
 	if er.Changes() != 1 {
-		t.Error("Update 2 num error", er, er.Changes())
+		t.Fatal("Update 2 num error", er, er.Changes())
 	}
 
 	er = db.Replace("tempUsersForDBTest", map[string]interface{}{
@@ -183,18 +193,18 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		"name":  "Amy",
 	})
 	if er.Error != nil {
-		t.Error("Replace 3 error", er)
+		t.Fatal("Replace 3 error", er)
 	}
 	if er.Id() != 3 {
-		t.Error("insertId 3 error", er, er.Changes())
+		t.Fatal("insertId 3 error", er, er.Changes())
 	}
 
 	er = db.Exec("delete from tempUsersForDBTest where id=3")
 	if er.Error != nil {
-		t.Error("Delete 3 error", er)
+		t.Fatal("Delete 3 error", er)
 	}
 	if er.Changes() != 1 {
-		t.Error("Delete 3 num error", er)
+		t.Fatal("Delete 3 num error", er)
 	}
 
 	er = db.Replace("tempUsersForDBTest", map[string]interface{}{
@@ -202,40 +212,40 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		"name":  "Jerry",
 	})
 	if er.Error != nil {
-		t.Error("Replace 4 error", er)
+		t.Fatal("Replace 4 error", er)
 	}
 	if er.Id() != 4 {
-		t.Error("insertId 4 error", er, er.Changes())
+		t.Fatal("insertId 4 error", er, er.Changes())
 	}
 
 	stmt := db.Prepare("replace into `tempUsersForDBTest` (`id`,`phone`,`name`) values (?,?,?)")
 	if stmt.Error != nil {
-		t.Error("Prepare 4 error", stmt)
+		t.Fatal("Prepare 4 error", stmt)
 	}
 	er = stmt.Exec(4, "18000000004", "Jerry's Mather")
 	stmt.Close()
 
 	if er.Error != nil {
-		t.Error("Replace 4 error", er)
+		t.Fatal("Replace 4 error", er)
 	}
 	if er.Id() != 4 {
-		t.Error("insertId 4 error", er)
+		t.Fatal("insertId 4 error", er)
 	}
 
 	userList := make([]userInfo, 0)
 	r := db.Query("select * from tempUsersForDBTest")
 	if r.Error != nil {
-		t.Error("Select userList error", r)
+		t.Fatal("Select userList error", r)
 	}
 	r.To(&userList)
-	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" {
-		t.Error("Select userList 1 error", userList, r)
+	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour * 24 * -1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" || userList[0].Active != false {
+		t.Fatal("Select userList 0 error", userList, r)
 	}
-	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone != "18000000222" {
-		t.Error("Select userList 1 error", userList, r)
+	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone != "18000000222" || userList[1].Active != true {
+		t.Fatal("Select userList 1 error", userList, r)
 	}
 	if userList[2].Id != 4 || userList[2].Name != "Jerry's Mather" || userList[2].Phone != "18000000004" {
-		t.Error("Select userList 1 error", userList, r)
+		t.Fatal("Select userList 2 error", userList, r)
 	}
 
 	finishDB(db, t)
@@ -247,7 +257,7 @@ func TestTransaction(t *testing.T) {
 	db := initDB(t)
 	tx := db.Begin()
 	if tx.Error != nil {
-		t.Error("Begin error", tx)
+		t.Fatal("Begin error", tx)
 	}
 
 	tx.Insert("tempUsersForDBTest", map[string]interface{}{
@@ -260,14 +270,14 @@ func TestTransaction(t *testing.T) {
 	r := db.Query("select * from tempUsersForDBTest")
 	r.To(&userList)
 	if r.Error != nil || len(userList) != 0 {
-		t.Error("Select Out Of TX", userList, r)
+		t.Fatal("Select Out Of TX", userList, r)
 	}
 
 	userList = make([]userInfo, 0)
 	r = tx.Query("select * from tempUsersForDBTest")
 	r.To(&userList)
 	if r.Error != nil || len(userList) != 1 {
-		t.Error("Select In TX", userList, r)
+		t.Fatal("Select In TX", userList, r)
 	}
 
 	tx.Rollback()
@@ -276,7 +286,7 @@ func TestTransaction(t *testing.T) {
 	r = db.Query("select * from tempUsersForDBTest")
 	r.To(&userList)
 	if r.Error != nil || len(userList) != 0 {
-		t.Error("Select When Rollback", userList, r)
+		t.Fatal("Select When Rollback", userList, r)
 	}
 
 	tx = db.Begin()
@@ -287,12 +297,12 @@ func TestTransaction(t *testing.T) {
 		finishDB(db, t)
 	}()
 	if tx.Error != nil {
-		t.Error("Begin 2 error", tx)
+		t.Fatal("Begin 2 error", tx)
 	}
 
 	stmt := tx.Prepare("insert into `tempUsersForDBTest` (`id`,`phone`,`name`) values (?,?,?)")
 	if stmt.Error != nil {
-		t.Error("Prepare 4 error", r)
+		t.Fatal("Prepare 4 error", r)
 	}
 	stmt.Exec(4, "18000000004", "Jerry's Mather")
 	stmt.Close()
@@ -303,7 +313,7 @@ func TestTransaction(t *testing.T) {
 	r = db.Query("select * from tempUsersForDBTest")
 	r.To(&userList)
 	if r.Error != nil || len(userList) != 1 {
-		t.Error("Select When Commit", userList, r)
+		t.Fatal("Select When Commit", userList, r)
 	}
 
 }
@@ -311,7 +321,7 @@ func TestTransaction(t *testing.T) {
 func initDB(t *testing.T) *DB {
 	db := GetDB("test", log.New(u.ShortUniqueId()))
 	if db.Error != nil {
-		t.Error("GetDB error", db)
+		t.Fatal("GetDB error", db)
 		return nil
 	}
 
@@ -321,10 +331,11 @@ func initDB(t *testing.T) *DB {
 				name VARCHAR(45) NOT NULL,
 				phone VARCHAR(45),
 				email VARCHAR(45),
+				active TINYINT NOT NULL DEFAULT 0,
 				time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 				PRIMARY KEY (id));`)
 	if er.Error != nil {
-		t.Error("Failed to create table", er)
+		t.Fatal("Failed to create table", er)
 	}
 	return db
 }
@@ -332,7 +343,7 @@ func initDB(t *testing.T) *DB {
 func finishDB(db *DB, t *testing.T) {
 	er := db.Exec(`DROP TABLE IF EXISTS tempUsersForDBTest;`)
 	if er.Error != nil {
-		t.Error("Failed to create table", er)
+		t.Fatal("Failed to create table", er)
 	}
 }
 
@@ -342,7 +353,7 @@ func BenchmarkForPool(b *testing.B) {
 	sql := "SELECT 1002 id, '13800000001' phone"
 	db := GetDB("test", nil)
 	if db.Error != nil {
-		b.Error("GetDB error", db)
+		b.Fatal("GetDB error", db)
 		return
 	}
 
@@ -351,11 +362,11 @@ func BenchmarkForPool(b *testing.B) {
 		results1 := make([]map[string]interface{}, 0)
 		r := db.Query(sql)
 		if r.Error != nil {
-			b.Error("Query error", sql, results1, r)
+			b.Fatal("Query error", sql, results1, r)
 		}
 		r.To(&results1)
 		if results1[0]["id"].(int64) != 1002 || results1[0]["phone"].(string) != "13800000001" {
-			b.Error("Result error", sql, results1, r)
+			b.Fatal("Result error", sql, results1, r)
 		}
 	}
 	b.Log("OpenConnections", db.GetOriginDB().Stats().OpenConnections)
@@ -367,7 +378,7 @@ func BenchmarkForPoolParallel(b *testing.B) {
 	sql := "SELECT 1002 id, '13800000001' phone"
 	db := GetDB("test", nil)
 	if db.Error != nil {
-		b.Error("GetDB error", db)
+		b.Fatal("GetDB error", db)
 		return
 	}
 	b.StartTimer()
@@ -377,11 +388,11 @@ func BenchmarkForPoolParallel(b *testing.B) {
 			results1 := make([]map[string]interface{}, 0)
 			r := db.Query(sql)
 			if r.Error != nil {
-				b.Error("Query error", sql, results1, r)
+				b.Fatal("Query error", sql, results1, r)
 			}
 			r.To(&results1)
 			if results1[0]["id"].(int64) != 1002 || results1[0]["phone"].(string) != "13800000001" {
-				b.Error("Result error", sql, results1, r)
+				b.Fatal("Result error", sql, results1, r)
 			}
 		}
 	})
