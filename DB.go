@@ -121,6 +121,10 @@ func GetDB(name string, logger *log.Logger) *DB {
 	decryptedPassword := ""
 	if conf.Password != "" {
 		decryptedPassword = u.DecryptAes(conf.Password, settedKey, settedIv)
+		if decryptedPassword == "" {
+			log.DefaultLogger.Warning("password is invalid")
+			decryptedPassword = conf.Password
+		}
 	} else {
 		if !isSqlite {
 			//logWarn("password is empty", nil)
@@ -230,7 +234,7 @@ func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
 	} else {
-		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, args, r.usedTime)
 		}
