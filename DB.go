@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/ssgo/config"
 	"github.com/ssgo/log"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,18 +25,41 @@ type dbInfo struct {
 	MaxIdles    int
 	MaxLifeTime int
 	LogSlow     int
+	logger      *log.Logger
 }
 
 func (conf *dbInfo) Dsn() string {
 	if strings.HasPrefix(conf.Type, "sqlite") {
 		return conf.Host
 	} else {
-		connectType := "tcp"
 		if []byte(conf.Host)[0] == '/' {
-			connectType = "unix"
+			return conf.Host
 		}
-		return fmt.Sprintf("%s:****@%s(%s)/%s", conf.User, connectType, conf.Host, conf.DB)
+		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%d", conf.Type, conf.User, conf.Host, conf.DB, conf.LogSlow)
 	}
+}
+
+func (conf *dbInfo) ConfigureBy(setting string) {
+	urlInfo, err := url.Parse(setting)
+	if err != nil {
+		conf.logger.Error(err.Error(), "url", setting)
+		return
+	}
+
+	conf.Type = urlInfo.Scheme
+	conf.Host = urlInfo.Host
+	conf.User = urlInfo.User.Username()
+	pwd, _ := urlInfo.User.Password()
+	conf.Password = pwd
+
+	if len(urlInfo.Path) > 1 {
+		conf.DB = urlInfo.Path[1:]
+	}
+
+	conf.MaxIdles = getIntValue(urlInfo.Query().Get("maxIdles"), conf.logger)
+	conf.MaxLifeTime = getIntValue(urlInfo.Query().Get("maxLifeTime"), conf.logger)
+	conf.MaxOpens = getIntValue(urlInfo.Query().Get("maxOpens"), conf.logger)
+	conf.LogSlow = getTimeValue(urlInfo.Query().Get("logSlow"), conf.logger)
 }
 
 type DB struct {
@@ -88,20 +113,27 @@ func GetDB(name string, logger *log.Logger) *DB {
 		return copyByLogger(dbInstances[name], logger)
 	}
 
-	if len(dbConfigs) == 0 {
-		once.Do(func() {
-			errs := config.LoadConfig("db", &dbConfigs)
-			if errs != nil {
-				for _, err := range errs {
-					logger.Error(err.Error())
-				}
-			}
-		})
-	}
-	conf := dbConfigs[name]
-	if conf == nil {
+	var conf *dbInfo
+	if strings.Contains(name, "://") {
 		conf = new(dbInfo)
-		dbConfigs[name] = conf
+		conf.logger = logger
+		conf.ConfigureBy(name)
+	} else {
+		if len(dbConfigs) == 0 {
+			once.Do(func() {
+				errs := config.LoadConfig("db", &dbConfigs)
+				if errs != nil {
+					for _, err := range errs {
+						logger.Error(err.Error())
+					}
+				}
+			})
+		}
+		conf = dbConfigs[name]
+		if conf == nil {
+			conf = new(dbInfo)
+			dbConfigs[name] = conf
+		}
 	}
 	if conf.Host == "" {
 		conf.Host = "127.0.0.1:3306"
@@ -167,6 +199,53 @@ func GetDB(name string, logger *log.Logger) *DB {
 	}
 	dbInstances[name] = db
 	return copyByLogger(db, logger)
+}
+
+func getIntValue(str string, logger *log.Logger) int {
+	if str == "" {
+		return 0
+	}
+	intValue, err := strconv.Atoi(str)
+	if err != nil {
+		logger.Error(err.Error())
+		return 0
+	} else {
+		return intValue
+	}
+}
+
+func getTimeValue(timeout string, logger *log.Logger) int {
+	if timeout == "" {
+		return 0
+	}
+
+	timeoutValue := 0
+	timeoutUnit := time.Millisecond
+	var err error
+	if strings.HasSuffix(timeout, "ms") {
+		timeoutUnit = time.Millisecond
+		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
+	} else if strings.HasSuffix(timeout, "us") {
+		timeoutUnit = time.Microsecond
+		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
+	} else if strings.HasSuffix(timeout, "ns") {
+		timeoutUnit = time.Nanosecond
+		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
+	} else if strings.HasSuffix(timeout, "s") {
+		timeoutUnit = time.Second
+		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
+	} else if strings.HasSuffix(timeout, "m") {
+		timeoutUnit = time.Minute
+		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
+	} else {
+		timeoutValue, err = strconv.Atoi(timeout)
+	}
+	if err != nil {
+		logger.Error(err.Error())
+		return 0
+	} else {
+		return int(time.Duration(timeoutValue) * timeoutUnit / time.Millisecond)
+	}
 }
 
 func copyByLogger(fromDB *DB, logger *log.Logger) *DB {
@@ -248,7 +327,7 @@ func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
 	} else {
-		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, args, r.usedTime)
 		}
@@ -263,7 +342,7 @@ func (db *DB) Insert(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}
@@ -277,7 +356,7 @@ func (db *DB) Replace(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}
@@ -292,7 +371,7 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow == -1 || r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}

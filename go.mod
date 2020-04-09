@@ -3,10 +3,9 @@ module github.com/ssgo/db
 go 1.12
 
 require (
-	github.com/go-sql-driver/mysql v1.4.1
-	github.com/mitchellh/mapstructure v1.1.2
-	github.com/ssgo/config v0.2.9
-	github.com/ssgo/log v0.2.9
-	github.com/ssgo/u v0.2.9
-	google.golang.org/appengine v1.4.0 // indirect
+	github.com/go-sql-driver/mysql v1.5.0
+	github.com/mitchellh/mapstructure v1.2.2
+	github.com/ssgo/config v0.2.11
+	github.com/ssgo/log v0.2.11
+	github.com/ssgo/u v0.2.11
 )

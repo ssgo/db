@@ -10,6 +10,10 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+//var dbset = "mysql://root:@localhost/test?logSlow=1"
+//var dbset = "mysql://localhost/test"
+var dbset = "test"
+
 type userInfo struct {
 	Id     int
 	Name   string
@@ -35,7 +39,6 @@ type UserModel struct {
 }
 
 func TestMakeInsertSql(t *testing.T) {
-
 	user := &UserModel{
 		UserBaseModel: UserBaseModel{
 			Name: "王二小",
@@ -55,8 +58,7 @@ func TestMakeInsertSql(t *testing.T) {
 func TestBaseSelect(t *testing.T) {
 
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test", nil)
-	db.Config.LogSlow = -1
+	db := GetDB("test2", nil)
 	if db.Error != nil {
 		t.Fatal("GetDB error", db.Error)
 		return
@@ -319,7 +321,7 @@ func TestTransaction(t *testing.T) {
 }
 
 func initDB(t *testing.T) *DB {
-	db := GetDB("test", log.New(u.ShortUniqueId()))
+	db := GetDB(dbset, log.New(u.ShortUniqueId()))
 	if db.Error != nil {
 		t.Fatal("GetDB error", db)
 		return nil
@@ -351,7 +353,7 @@ func BenchmarkForPool(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test", nil)
+	db := GetDB(dbset, nil)
 	if db.Error != nil {
 		b.Fatal("GetDB error", db)
 		return
@@ -376,7 +378,7 @@ func BenchmarkForPoolParallel(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test", nil)
+	db := GetDB(dbset, nil)
 	if db.Error != nil {
 		b.Fatal("GetDB error", db)
 		return
