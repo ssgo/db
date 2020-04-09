@@ -7,7 +7,6 @@ import (
 	"github.com/ssgo/config"
 	"github.com/ssgo/log"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +23,7 @@ type dbInfo struct {
 	MaxOpens    int
 	MaxIdles    int
 	MaxLifeTime int
-	LogSlow     int
+	LogSlow     config.Duration
 	logger      *log.Logger
 }
 
@@ -35,7 +34,7 @@ func (conf *dbInfo) Dsn() string {
 		if []byte(conf.Host)[0] == '/' {
 			return conf.Host
 		}
-		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%d", conf.Type, conf.User, conf.Host, conf.DB, conf.LogSlow)
+		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s", conf.Type, conf.User, conf.Host, conf.DB, conf.LogSlow.TimeDuration())
 	}
 }
 
@@ -56,10 +55,10 @@ func (conf *dbInfo) ConfigureBy(setting string) {
 		conf.DB = urlInfo.Path[1:]
 	}
 
-	conf.MaxIdles = getIntValue(urlInfo.Query().Get("maxIdles"), conf.logger)
-	conf.MaxLifeTime = getIntValue(urlInfo.Query().Get("maxLifeTime"), conf.logger)
-	conf.MaxOpens = getIntValue(urlInfo.Query().Get("maxOpens"), conf.logger)
-	conf.LogSlow = getTimeValue(urlInfo.Query().Get("logSlow"), conf.logger)
+	conf.MaxIdles = u.Int(urlInfo.Query().Get("maxIdles"))
+	conf.MaxLifeTime = u.Int(urlInfo.Query().Get("maxLifeTime"))
+	conf.MaxOpens = u.Int(urlInfo.Query().Get("maxOpens"))
+	conf.LogSlow = config.Duration(u.Duration(urlInfo.Query().Get("logSlow")))
 }
 
 type DB struct {
@@ -195,57 +194,10 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conn.SetConnMaxLifetime(time.Second * time.Duration(conf.MaxLifeTime))
 	}
 	if conf.LogSlow == 0 {
-		conf.LogSlow = 1000
+		conf.LogSlow = config.Duration(1000 * time.Millisecond)
 	}
 	dbInstances[name] = db
 	return copyByLogger(db, logger)
-}
-
-func getIntValue(str string, logger *log.Logger) int {
-	if str == "" {
-		return 0
-	}
-	intValue, err := strconv.Atoi(str)
-	if err != nil {
-		logger.Error(err.Error())
-		return 0
-	} else {
-		return intValue
-	}
-}
-
-func getTimeValue(timeout string, logger *log.Logger) int {
-	if timeout == "" {
-		return 0
-	}
-
-	timeoutValue := 0
-	timeoutUnit := time.Millisecond
-	var err error
-	if strings.HasSuffix(timeout, "ms") {
-		timeoutUnit = time.Millisecond
-		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
-	} else if strings.HasSuffix(timeout, "us") {
-		timeoutUnit = time.Microsecond
-		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
-	} else if strings.HasSuffix(timeout, "ns") {
-		timeoutUnit = time.Nanosecond
-		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
-	} else if strings.HasSuffix(timeout, "s") {
-		timeoutUnit = time.Second
-		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
-	} else if strings.HasSuffix(timeout, "m") {
-		timeoutUnit = time.Minute
-		timeoutValue, err = strconv.Atoi(timeout[0 : len(timeout)-2])
-	} else {
-		timeoutValue, err = strconv.Atoi(timeout)
-	}
-	if err != nil {
-		logger.Error(err.Error())
-		return 0
-	} else {
-		return int(time.Duration(timeoutValue) * timeoutUnit / time.Millisecond)
-	}
 }
 
 func copyByLogger(fromDB *DB, logger *log.Logger) *DB {
@@ -297,14 +249,14 @@ func (db *DB) Prepare(requestSql string) *Stmt {
 
 func (db *DB) Begin() *Tx {
 	if db.conn == nil {
-		return &Tx{logSlow: db.Config.LogSlow, Error: errors.New("operate on a bad connection"), logger: db.logger}
+		return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), Error: errors.New("operate on a bad connection"), logger: db.logger}
 	}
 	sqlTx, err := db.conn.Begin()
 	if err != nil {
 		db.logger.LogError(err.Error())
-		return &Tx{logSlow: db.Config.LogSlow, Error: nil, logger: db.logger}
+		return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), Error: nil, logger: db.logger}
 	}
-	return &Tx{logSlow: db.Config.LogSlow, conn: sqlTx, logger: db.logger}
+	return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), conn: sqlTx, logger: db.logger}
 }
 
 func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
@@ -313,7 +265,7 @@ func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
 	} else {
-		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, args, r.usedTime)
 		}
@@ -327,7 +279,7 @@ func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
 	} else {
-		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, args, r.usedTime)
 		}
@@ -342,7 +294,7 @@ func (db *DB) Insert(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}
@@ -356,7 +308,7 @@ func (db *DB) Replace(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}
@@ -371,7 +323,7 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, values, r.usedTime)
 	} else {
-		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow) {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
 			// 记录慢请求日志
 			db.logger.LogQuery(requestSql, values, r.usedTime)
 		}
