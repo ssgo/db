@@ -162,6 +162,9 @@ func (r *QueryResult) ToKV(target interface{}) {
 	}
 
 	vt := t.Elem()
+	for vt.Kind() == reflect.Ptr {
+		vt = v.Type()
+	}
 	if vt.Kind() == reflect.Map || vt.Kind() == reflect.Struct {
 		colTypes, err := r.getColumnTypes()
 		list := r.MapResults()
