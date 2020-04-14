@@ -162,10 +162,11 @@ func (r *QueryResult) ToKV(target interface{}) {
 	}
 
 	vt := t.Elem()
-	for vt.Kind() == reflect.Ptr {
-		vt = v.Type()
+	finalVt := vt
+	for finalVt.Kind() == reflect.Ptr {
+		finalVt = finalVt.Elem()
 	}
-	if vt.Kind() == reflect.Map || vt.Kind() == reflect.Struct {
+	if finalVt.Kind() == reflect.Map || finalVt.Kind() == reflect.Struct {
 		colTypes, err := r.getColumnTypes()
 		list := r.MapResults()
 		if err != nil {
@@ -173,13 +174,24 @@ func (r *QueryResult) ToKV(target interface{}) {
 			return
 		} else {
 			for _, item := range list {
-				if vt.Kind() == reflect.Struct {
-					newValue := reflect.New(vt)
+				if finalVt.Kind() == reflect.Struct {
+					newKey := reflect.ValueOf(reflect.New(t.Key()).Interface()).Elem()
+					u.Convert(item[colTypes[0].Name()], newKey)
+
+					newValue := v.MapIndex(newKey)
+					isNew := false
+					if !newValue.IsValid() {
+						newValue = reflect.New(vt)
+						isNew = true
+					}
+
 					err := mapstructure.WeakDecode(item, newValue.Interface())
 					if err != nil {
 						r.logger.LogError(err.Error())
-					} else {
-						v.SetMapIndex(reflect.ValueOf(u.String(item[colTypes[0].Name()])), newValue.Elem())
+					}
+
+					if isNew {
+						v.SetMapIndex(newKey, newValue.Elem())
 					}
 				}
 			}
@@ -308,6 +320,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 	}
 
 	var data reflect.Value
+	isNew := true
 	for rows.Next() {
 
 		err = rows.Scan(scanValues...)
@@ -315,7 +328,12 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 			return err
 		}
 		if rowType.Kind() == reflect.Struct {
-			data = reflect.New(rowType).Elem()
+			if resultsValue.Kind() == reflect.Slice {
+				data = reflect.New(rowType).Elem()
+			} else {
+				data = resultsValue
+				isNew = false
+			}
 			for colIndex, col := range colTypes {
 				publicColName := makePublicVarName(col.Name())
 				_, found := rowType.FieldByName(publicColName)
@@ -328,7 +346,12 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 			}
 		} else if rowType.Kind() == reflect.Map {
 			// 结果放入Map
-			data = reflect.MakeMap(rowType)
+			if resultsValue.Kind() == reflect.Slice {
+				data = reflect.MakeMap(rowType)
+			} else {
+				data = resultsValue
+				isNew = false
+			}
 			for colIndex, col := range colTypes {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
@@ -353,9 +376,9 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 		}
 
 		if resultsValue.Kind() == reflect.Slice {
-			if originRowType.Kind() == reflect.Ptr{
+			if originRowType.Kind() == reflect.Ptr {
 				resultsValue = reflect.Append(resultsValue, data.Addr())
-			}else {
+			} else {
 				resultsValue = reflect.Append(resultsValue, data)
 			}
 		} else {
@@ -364,7 +387,9 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 		}
 	}
 
-	reflect.ValueOf(results).Elem().Set(resultsValue)
+	if isNew {
+		reflect.ValueOf(results).Elem().Set(resultsValue)
+	}
 	return nil
 }
 

@@ -15,12 +15,14 @@ import (
 var dbset = "test"
 
 type userInfo struct {
-	Id     int
-	Name   string
-	Phone  string
-	Email  string
-	Active bool
-	Time   string
+	innerId int
+	Tag     string
+	Id      int
+	Name    string
+	Phone   string
+	Email   string
+	Active  bool
+	Time    string
 }
 
 type UserBaseModel struct {
@@ -41,8 +43,8 @@ type UserModel struct {
 func TestMakeInsertSql(t *testing.T) {
 	user := &UserModel{
 		UserBaseModel: UserBaseModel{
-			Name: "王二小",
-			Password:   "2121asds",
+			Name:     "王二小",
+			Password: "2121asds",
 		},
 		Active:     true,
 		UserStatus: 1, //正常,
@@ -130,13 +132,13 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Result error", sql, results7, r)
 	}
 
-	results8 := userInfo{}
+	results8 := userInfo{innerId:2, Tag:"abc"}
 	r = db.Query(sql)
 	if r.Error != nil {
 		t.Fatal("Query error", sql, results8, r)
 	}
 	r.To(&results8)
-	if results8.Id != 1002 || results8.Phone != "13800000001" {
+	if results8.Id != 1002 || results8.Phone != "13800000001" || results8.innerId != 2 || results8.Tag != "abc" {
 		t.Fatal("Result error", sql, results8, r)
 	}
 
@@ -240,7 +242,7 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		t.Fatal("Select userList error", r)
 	}
 	r.To(&userList)
-	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour * 24 * -1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" || userList[0].Active != false {
+	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" || userList[0].Active != false {
 		t.Fatal("Select userList 0 error", userList, r)
 	}
 	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone != "18000000222" || userList[1].Active != true {
