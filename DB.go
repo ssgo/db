@@ -330,3 +330,11 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 	}
 	return r
 }
+
+func InKeys(numArgs int) string {
+	a := make([]string, numArgs)
+	for i := 0; i < numArgs; i++ {
+		a[i] = "?"
+	}
+	return fmt.Sprintf("(%s)", strings.Join(a, ","))
+}

@@ -7,6 +7,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/ssgo/u"
 	"reflect"
+	"time"
 )
 
 type QueryResult struct {
@@ -336,11 +337,18 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 			}
 			for colIndex, col := range colTypes {
 				publicColName := makePublicVarName(col.Name())
-				_, found := rowType.FieldByName(publicColName)
+				field, found := rowType.FieldByName(publicColName)
 				if found {
 					valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 					if !valuePtr.IsNil() {
-						data.FieldByName(publicColName).Set(valuePtr.Elem())
+						if field.Type.String() == "time.Time" {
+							tm, err := time.Parse("2006-01-02 15:04:05", valuePtr.Elem().String())
+							if err != nil {
+								data.FieldByName(publicColName).Set(reflect.ValueOf(tm))
+							}
+						} else {
+							data.FieldByName(publicColName).Set(valuePtr.Elem())
+						}
 					}
 				}
 			}

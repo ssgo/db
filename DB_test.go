@@ -132,7 +132,7 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Result error", sql, results7, r)
 	}
 
-	results8 := userInfo{innerId:2, Tag:"abc"}
+	results8 := userInfo{innerId: 2, Tag: "abc"}
 	r = db.Query(sql)
 	if r.Error != nil {
 		t.Fatal("Query error", sql, results8, r)

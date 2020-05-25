@@ -27,6 +27,7 @@ func basePrepare(db *sql.DB, tx *sql.Tx, requestSql string) *Stmt {
 }
 
 func baseExec(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *ExecResult {
+	args = flatArgs(args)
 	var r sql.Result
 	var err error
 	startTime := time.Now()
@@ -45,7 +46,35 @@ func baseExec(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *E
 	return &ExecResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), result: r}
 }
 
+func flatArgs(args []interface{}) []interface{} {
+	var newArgs []interface{} = nil
+	for i, arg := range args {
+		argValue := reflect.ValueOf(arg)
+		if argValue.Kind() == reflect.Slice && argValue.Type().Elem().Kind() != reflect.Uint8 {
+			if newArgs == nil {
+				newArgs = make([]interface{}, 0)
+				newArgs = append(newArgs, args[0:i]...)
+			}
+			for j := 0; j < argValue.Len(); j++ {
+				newArgs = append(newArgs, argValue.Index(j).Interface())
+			}
+		} else {
+			if newArgs != nil {
+				newArgs = append(newArgs, arg)
+			}
+		}
+	}
+
+	if newArgs != nil {
+		return newArgs
+	} else {
+		return args
+	}
+}
+
 func baseQuery(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *QueryResult {
+	args = flatArgs(args)
+
 	var rows *sql.Rows
 	var err error
 	startTime := time.Now()
@@ -64,6 +93,18 @@ func baseQuery(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *
 	return &QueryResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), rows: rows}
 }
 
+func makeTableName(table string) string {
+	if table[0] != '`' {
+		a := strings.SplitN(table, ".", 2)
+		a[0] = fmt.Sprintf("`%s`", a[0])
+		if len(a) == 2 {
+			a[1] = fmt.Sprintf("`%s`", a[1])
+		}
+		table = strings.Join(a, ".")
+	}
+	return table
+}
+
 func makeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
 	keys, vars, values := makeKeysVarsValues(data)
 	var operation string
@@ -72,11 +113,12 @@ func makeInsertSql(table string, data interface{}, useReplace bool) (string, []i
 	} else {
 		operation = "insert"
 	}
-	requestSql := fmt.Sprintf("%s into `%s` (`%s`) values (%s)", operation, table, strings.Join(keys, "`,`"), strings.Join(vars, ","))
+	requestSql := fmt.Sprintf("%s into %s (`%s`) values (%s)", operation, makeTableName(table), strings.Join(keys, "`,`"), strings.Join(vars, ","))
 	return requestSql, values
 }
 
 func makeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
+	args = flatArgs(args)
 	keys, vars, values := makeKeysVarsValues(data)
 	for i, k := range keys {
 		keys[i] = fmt.Sprintf("`%s`=%s", k, vars[i])
@@ -84,7 +126,7 @@ func makeUpdateSql(table string, data interface{}, wheres string, args ...interf
 	for _, v := range args {
 		values = append(values, v)
 	}
-	requestSql := fmt.Sprintf("update `%s` set %s where %s", table, strings.Join(keys, ","), wheres)
+	requestSql := fmt.Sprintf("update %s set %s where %s", makeTableName(table), strings.Join(keys, ","), wheres)
 	return requestSql, values
 }
 
