@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ssgo/log"
+	"github.com/ssgo/u"
 	"reflect"
 	"strings"
 	"time"
@@ -47,29 +48,37 @@ func baseExec(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *E
 }
 
 func flatArgs(args []interface{}) []interface{} {
-	var newArgs []interface{} = nil
+	//var newArgs []interface{} = nil
+	//for i, arg := range args {
+	//	argValue := reflect.ValueOf(arg)
+	//	if argValue.Kind() == reflect.Slice && argValue.Type().Elem().Kind() != reflect.Uint8 {
+	//		if newArgs == nil {
+	//			newArgs = make([]interface{}, 0)
+	//			newArgs = append(newArgs, args[0:i]...)
+	//		}
+	//		for j := 0; j < argValue.Len(); j++ {
+	//			newArgs = append(newArgs, argValue.Index(j).Interface())
+	//		}
+	//	} else {
+	//		if newArgs != nil {
+	//			newArgs = append(newArgs, arg)
+	//		}
+	//	}
+	//}
+	//
+	//if newArgs != nil {
+	//	return newArgs
+	//} else {
+	//	return args
+	//}
+
 	for i, arg := range args {
 		argValue := reflect.ValueOf(arg)
-		if argValue.Kind() == reflect.Slice && argValue.Type().Elem().Kind() != reflect.Uint8 {
-			if newArgs == nil {
-				newArgs = make([]interface{}, 0)
-				newArgs = append(newArgs, args[0:i]...)
-			}
-			for j := 0; j < argValue.Len(); j++ {
-				newArgs = append(newArgs, argValue.Index(j).Interface())
-			}
-		} else {
-			if newArgs != nil {
-				newArgs = append(newArgs, arg)
-			}
+		if argValue.Kind() == reflect.Map || argValue.Kind() == reflect.Struct || (argValue.Kind() == reflect.Slice && argValue.Type().Elem().Kind() != reflect.Uint8) {
+			args[i] = u.Json(arg)
 		}
 	}
-
-	if newArgs != nil {
-		return newArgs
-	} else {
-		return args
-	}
+	return args
 }
 
 func baseQuery(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *QueryResult {

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/mitchellh/mapstructure"
@@ -345,6 +346,16 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 							tm, err := time.Parse("2006-01-02 15:04:05", valuePtr.Elem().String())
 							if err != nil {
 								data.FieldByName(publicColName).Set(reflect.ValueOf(tm))
+							}
+						} else if valuePtr.Elem().Kind() != data.FieldByName(publicColName).Kind() && data.FieldByName(publicColName).Kind() != reflect.Interface {
+							convertedObject := reflect.New(data.FieldByName(publicColName).Type())
+							if s, ok := valuePtr.Elem().Interface().(string); ok {
+								stotedValue := new(interface{})
+								json.Unmarshal([]byte(s), stotedValue)
+								u.Convert(stotedValue, convertedObject.Interface())
+								data.FieldByName(publicColName).Set(convertedObject.Elem())
+							}else{
+								u.Convert(valuePtr.Elem().Interface(), convertedObject.Interface())
 							}
 						} else {
 							data.FieldByName(publicColName).Set(valuePtr.Elem())

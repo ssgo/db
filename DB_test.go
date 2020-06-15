@@ -21,6 +21,7 @@ type userInfo struct {
 	Name    string
 	Phone   string
 	Email   string
+	Parents []string
 	Active  bool
 	Time    string
 }
@@ -35,6 +36,7 @@ type UserModel struct {
 	UserBaseModel
 	Phone      string
 	Active     bool
+	Parents    []string
 	UserStatus int
 	Owner      int
 	Salt       string
@@ -46,13 +48,14 @@ func TestMakeInsertSql(t *testing.T) {
 			Name:     "王二小",
 			Password: "2121asds",
 		},
+		Parents:    []string{"aa", "bb"},
 		Active:     true,
 		UserStatus: 1, //正常,
 		Salt:       "de312",
 	}
 
 	requestSql, _ := makeInsertSql("table_name", user, false)
-	if requestSql != "insert into `table_name` (`Id`,`Name`,`Password`,`Phone`,`Active`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?,?)" {
+	if requestSql != "insert into `table_name` (`Id`,`Name`,`Password`,`Phone`,`Active`,`Parents`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?,?,?)" {
 		t.Fatal("MakeInsertSql requestSql error ", requestSql)
 	}
 }
@@ -160,6 +163,7 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 	er := db.Insert("tempUsersForDBTest", map[string]interface{}{
 		"phone": 18033336666,
 		"name":  "Star",
+		"parents": []string{"dd","mm"},
 		"time":  ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
 	})
 	if er.Error != nil {
@@ -245,6 +249,9 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" || userList[0].Active != false {
 		t.Fatal("Select userList 0 error", userList, r)
 	}
+	if len(userList[0].Parents) != 2 || userList[0].Parents[0] != "dd" {
+		t.Fatal("Select userList 0 Parents error", userList, r)
+	}
 	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone != "18000000222" || userList[1].Active != true {
 		t.Fatal("Select userList 1 error", userList, r)
 	}
@@ -319,7 +326,6 @@ func TestTransaction(t *testing.T) {
 	if r.Error != nil || len(userList) != 1 {
 		t.Fatal("Select When Commit", userList, r)
 	}
-
 }
 
 func initDB(t *testing.T) *DB {
@@ -335,6 +341,7 @@ func initDB(t *testing.T) *DB {
 				name VARCHAR(45) NOT NULL,
 				phone VARCHAR(45),
 				email VARCHAR(45),
+				parents JSON,
 				active TINYINT NOT NULL DEFAULT 0,
 				time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 				PRIMARY KEY (id));`)
