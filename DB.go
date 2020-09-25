@@ -109,7 +109,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 	}
 
 	if dbInstances[name] != nil {
-		return copyByLogger(dbInstances[name], logger)
+		return dbInstances[name].CopyByLogger(logger)
 	}
 
 	var conf *dbInfo
@@ -197,17 +197,17 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.LogSlow = config.Duration(1000 * time.Millisecond)
 	}
 	dbInstances[name] = db
-	return copyByLogger(db, logger)
+	return db.CopyByLogger(logger)
 }
 
-func copyByLogger(fromDB *DB, logger *log.Logger) *DB {
+func (db *DB) CopyByLogger(logger *log.Logger) *DB {
 	newDB := new(DB)
-	newDB.conn = fromDB.conn
-	newDB.Config = fromDB.Config
+	newDB.conn = db.conn
+	newDB.Config = db.Config
 	if logger == nil {
 		logger = log.DefaultLogger
 	}
-	newDB.logger = &dbLogger{logger: logger, config: fromDB.Config}
+	newDB.logger = &dbLogger{logger: logger, config: db.Config}
 	return newDB
 }
 
