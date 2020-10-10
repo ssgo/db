@@ -155,6 +155,27 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Result error", sql, results9, r)
 	}
 
+	r = db.Query(sql)
+	results10 := map[string]string{}
+	r.ToKV(&results10)
+	if results10["1002"] != "13800000001" {
+		t.Fatal("Result error", sql, results10, r)
+	}
+
+	r = db.Query(sql)
+	results11 := map[string]map[string]string{}
+	r.ToKV(&results11)
+	if results11["1002"]["phone"] != "13800000001" {
+		t.Fatal("Result error", sql, results11, r)
+	}
+
+	r = db.Query(sql)
+	results12 := map[string]userInfo{}
+	r.ToKV(&results12)
+	if results12["1002"].Phone != "13800000001" {
+		t.Fatal("Result error", sql, results12, r)
+	}
+
 	//t.Log("OpenConnections", db.GetOriginDB().Stats().OpenConnections)
 }
 

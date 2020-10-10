@@ -176,25 +176,23 @@ func (r *QueryResult) ToKV(target interface{}) {
 			return
 		} else {
 			for _, item := range list {
-				if finalVt.Kind() == reflect.Struct {
-					newKey := reflect.ValueOf(reflect.New(t.Key()).Interface()).Elem()
-					u.Convert(item[colTypes[0].Name()], newKey)
+				newKey := reflect.ValueOf(reflect.New(t.Key()).Interface()).Elem()
+				u.Convert(item[colTypes[0].Name()], newKey)
 
-					newValue := v.MapIndex(newKey)
-					isNew := false
-					if !newValue.IsValid() {
-						newValue = reflect.New(vt)
-						isNew = true
-					}
+				newValue := v.MapIndex(newKey)
+				isNew := false
+				if !newValue.IsValid() {
+					newValue = reflect.New(vt)
+					isNew = true
+				}
 
-					err := mapstructure.WeakDecode(item, newValue.Interface())
-					if err != nil {
-						r.logger.LogError(err.Error())
-					}
+				err := mapstructure.WeakDecode(item, newValue.Interface())
+				if err != nil {
+					r.logger.LogError(err.Error())
+				}
 
-					if isNew {
-						v.SetMapIndex(newKey, newValue.Elem())
-					}
+				if isNew {
+					v.SetMapIndex(newKey, newValue.Elem())
 				}
 			}
 		}
@@ -354,7 +352,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 								json.Unmarshal([]byte(s), stotedValue)
 								u.Convert(stotedValue, convertedObject.Interface())
 								data.FieldByName(publicColName).Set(convertedObject.Elem())
-							}else{
+							} else {
 								u.Convert(valuePtr.Elem().Interface(), convertedObject.Interface())
 							}
 						} else {
