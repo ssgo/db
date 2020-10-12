@@ -150,7 +150,7 @@ func (r *QueryResult) StringOnR1C1() string {
 	return result
 }
 
-func (r *QueryResult) ToKV(target interface{}) {
+func (r *QueryResult) ToKV(target interface{}) error {
 	v := reflect.ValueOf(target)
 	t := v.Type()
 	for t.Kind() == reflect.Ptr {
@@ -160,7 +160,7 @@ func (r *QueryResult) ToKV(target interface{}) {
 
 	if t.Kind() != reflect.Map {
 		r.logger.LogQueryError("target not a map", *r.Sql, r.Args, r.usedTime)
-		return
+		return errors.New("target not a map")
 	}
 
 	vt := t.Elem()
@@ -173,7 +173,7 @@ func (r *QueryResult) ToKV(target interface{}) {
 		list := r.MapResults()
 		if err != nil {
 			r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
-			return
+			return err
 		} else {
 			for _, item := range list {
 				newKey := reflect.ValueOf(reflect.New(t.Key()).Interface()).Elem()
@@ -235,7 +235,7 @@ func (r *QueryResult) ToKV(target interface{}) {
 		}
 	}
 
-	return
+	return nil
 }
 
 func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
