@@ -404,7 +404,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 		}
 	}
 
-	if isNew {
+	if isNew && resultsValue.IsValid() {
 		reflect.ValueOf(results).Elem().Set(resultsValue)
 	}
 	return nil
