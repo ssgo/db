@@ -15,16 +15,17 @@ import (
 )
 
 type dbInfo struct {
-	Type        string
-	User        string
-	Password    string
-	Host        string
-	DB          string
-	MaxOpens    int
-	MaxIdles    int
-	MaxLifeTime int
-	LogSlow     config.Duration
-	logger      *log.Logger
+	Type          string
+	User          string
+	Password      string
+	Host          string
+	ReadonlyHosts []string
+	DB            string
+	MaxOpens      int
+	MaxIdles      int
+	MaxLifeTime   int
+	LogSlow       config.Duration
+	logger        *log.Logger
 }
 
 func (conf *dbInfo) Dsn() string {
@@ -34,7 +35,11 @@ func (conf *dbInfo) Dsn() string {
 		if []byte(conf.Host)[0] == '/' {
 			return conf.Host
 		}
-		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s", conf.Type, conf.User, conf.Host, conf.DB, conf.LogSlow.TimeDuration())
+		hosts := []string{conf.Host}
+		if conf.ReadonlyHosts != nil {
+			hosts = append(hosts, conf.ReadonlyHosts...)
+		}
+		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s", conf.Type, conf.User, strings.Join(hosts, ","), conf.DB, conf.LogSlow.TimeDuration())
 	}
 }
 
@@ -46,7 +51,15 @@ func (conf *dbInfo) ConfigureBy(setting string) {
 	}
 
 	conf.Type = urlInfo.Scheme
-	conf.Host = urlInfo.Host
+	if strings.ContainsRune(urlInfo.Host, ',') {
+		// 多个节点，读写分离
+		a := strings.Split(urlInfo.Host, ",")
+		conf.Host = a[0]
+		conf.ReadonlyHosts = a[1:]
+	} else {
+		conf.Host = urlInfo.Host
+		conf.ReadonlyHosts = nil
+	}
 	conf.User = urlInfo.User.Username()
 	pwd, _ := urlInfo.User.Password()
 	conf.Password = pwd
@@ -62,10 +75,11 @@ func (conf *dbInfo) ConfigureBy(setting string) {
 }
 
 type DB struct {
-	conn   *sql.DB
-	Config *dbInfo
-	logger *dbLogger
-	Error  error
+	conn                *sql.DB
+	readonlyConnections []*sql.DB
+	Config              *dbInfo
+	logger              *dbLogger
+	Error               error
 }
 
 // var settedKey = []byte("vpL54DlR2KG{JSAaAX7Tu;*#&DnG`M0o")
@@ -147,7 +161,14 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.DB = "test"
 	}
 
-	isSqlite := strings.HasPrefix(conf.Type, "sqlite")
+	if strings.ContainsRune(conf.Host, ',') {
+		// 多个节点，读写分离
+		a := strings.Split(conf.Host, ",")
+		conf.Host = a[0]
+		conf.ReadonlyHosts = a[1:]
+	} else {
+		conf.ReadonlyHosts = nil
+	}
 
 	decryptedPassword := ""
 	if conf.Password != "" {
@@ -157,31 +178,54 @@ func GetDB(name string, logger *log.Logger) *DB {
 			decryptedPassword = conf.Password
 		}
 	} else {
-		if !isSqlite {
+		if !strings.HasPrefix(conf.Type, "sqlite") {
 			//logWarn("password is empty", nil)
 			logger.Warning("password is empty")
 		}
 	}
 	conf.Password = u.UniqueId()
 
-	connectType := "tcp"
-	if []byte(conf.Host)[0] == '/' {
-		connectType = "unix"
-	}
-
-	dsn := ""
-	if isSqlite {
-		dsn = conf.Host
-	} else {
-		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, decryptedPassword, connectType, conf.Host, conf.DB)
-	}
-	conn, err := sql.Open(conf.Type, dsn)
+	//connectType := "tcp"
+	//if []byte(conf.Host)[0] == '/' {
+	//	connectType = "unix"
+	//}
+	//
+	//dsn := ""
+	//if isSqlite {
+	//	dsn = conf.Host
+	//} else {
+	//	dsn = fmt.Sprintf("%s:%s@%s(%s)/%s", conf.User, decryptedPassword, connectType, conf.Host, conf.DB)
+	//}
+	//conn, err := sql.Open(conf.Type, dsn)
+	//if err != nil {
+	//	logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
+	//	return &DB{conn: nil, Error: err}
+	//}
+	conn, err := getPool(conf.Type, conf.Host, conf.User, decryptedPassword, conf.DB)
 	if err != nil {
 		logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 		return &DB{conn: nil, Error: err}
 	}
+
 	db := new(DB)
 	db.conn = conn
+
+	// 创建只读连接池
+	if conf.ReadonlyHosts != nil {
+		readonlyConnections := make([]*sql.DB, 0)
+		for _, host := range conf.ReadonlyHosts {
+			conn, err := getPool(conf.Type, host, conf.User, decryptedPassword, conf.DB)
+			if err != nil {
+				logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
+			} else {
+				readonlyConnections = append(readonlyConnections, conn)
+			}
+		}
+		if len(readonlyConnections) > 0 {
+			db.readonlyConnections = readonlyConnections
+		}
+	}
+
 	db.Error = nil
 	db.Config = conf
 	if conf.MaxIdles > 0 {
@@ -200,9 +244,25 @@ func GetDB(name string, logger *log.Logger) *DB {
 	return db.CopyByLogger(logger)
 }
 
+func getPool(typ, host, user, pwd, db string) (*sql.DB, error) {
+	connectType := "tcp"
+	if []byte(host)[0] == '/' {
+		connectType = "unix"
+	}
+
+	dsn := ""
+	if strings.HasPrefix(typ, "sqlite") {
+		dsn = host
+	} else {
+		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s", user, pwd, connectType, host, db)
+	}
+	return sql.Open(typ, dsn)
+}
+
 func (db *DB) CopyByLogger(logger *log.Logger) *DB {
 	newDB := new(DB)
 	newDB.conn = db.conn
+	newDB.readonlyConnections = db.readonlyConnections
 	newDB.Config = db.Config
 	if logger == nil {
 		logger = log.DefaultLogger
@@ -274,7 +334,18 @@ func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
 }
 
 func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
-	r := baseQuery(db.conn, nil, requestSql, args...)
+	conn := db.conn
+	if db.readonlyConnections != nil {
+		connNum := len(db.readonlyConnections)
+		if connNum == 1 {
+			conn = db.readonlyConnections[0]
+		} else {
+			p := u.GlobalRand1.Intn(connNum)
+			conn = db.readonlyConnections[p]
+		}
+	}
+
+	r := baseQuery(conn, nil, requestSql, args...)
 	r.logger = db.logger
 	if r.Error != nil {
 		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
