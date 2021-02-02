@@ -337,25 +337,43 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 			for colIndex, col := range colTypes {
 				publicColName := makePublicVarName(col.Name())
 				field, found := rowType.FieldByName(publicColName)
+				//fmt.Println("=====1", publicColName, found)
 				if found {
 					valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 					if !valuePtr.IsNil() {
+						//fmt.Println("=====2", valuePtr.String(), valuePtr.Elem().Kind(), data.FieldByName(publicColName).Kind())
 						if field.Type.String() == "time.Time" {
+							// 转换时间
 							tm, err := time.Parse("2006-01-02 15:04:05", valuePtr.Elem().String())
 							if err != nil {
 								data.FieldByName(publicColName).Set(reflect.ValueOf(tm))
 							}
 						} else if valuePtr.Elem().Kind() != data.FieldByName(publicColName).Kind() && data.FieldByName(publicColName).Kind() != reflect.Interface {
-							convertedObject := reflect.New(data.FieldByName(publicColName).Type())
-							if s, ok := valuePtr.Elem().Interface().(string); ok {
-								stotedValue := new(interface{})
-								json.Unmarshal([]byte(s), stotedValue)
-								u.Convert(stotedValue, convertedObject.Interface())
-								data.FieldByName(publicColName).Set(convertedObject.Elem())
-							} else {
-								u.Convert(valuePtr.Elem().Interface(), convertedObject.Interface())
+							if data.FieldByName(publicColName).Kind() == reflect.Ptr {
+								//fmt.Println("=====9", data.FieldByName(publicColName).Type().Elem().Kind())
+							}
+							if data.FieldByName(publicColName).Kind() == reflect.Ptr && valuePtr.Elem().Kind() == data.FieldByName(publicColName).Type().Elem().Kind() {
+								// 匹配指针类型
+								//fmt.Println("=====5")
+								if valuePtr.Elem().CanAddr() {
+									data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
+								}
+							}else {
+								// 类型不匹配
+								//fmt.Println("=====3")
+								convertedObject := reflect.New(data.FieldByName(publicColName).Type())
+								if s, ok := valuePtr.Elem().Interface().(string); ok {
+									stotedValue := new(interface{})
+									json.Unmarshal([]byte(s), stotedValue)
+									u.Convert(stotedValue, convertedObject.Interface())
+									data.FieldByName(publicColName).Set(convertedObject.Elem())
+								} else {
+									u.Convert(valuePtr.Elem().Interface(), convertedObject.Interface())
+								}
 							}
 						} else {
+							// 类型完全匹配
+							//fmt.Println("=====4")
 							data.FieldByName(publicColName).Set(valuePtr.Elem())
 						}
 					}

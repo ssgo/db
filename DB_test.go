@@ -19,7 +19,7 @@ type userInfo struct {
 	Tag     string
 	Id      int
 	Name    string
-	Phone   string
+	Phone   *string
 	Email   string
 	Parents []string
 	Active  bool
@@ -105,7 +105,7 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Query error", sql, results4, r)
 	}
 	r.To(&results4)
-	if results4[0].Id != 1002 || results4[0].Phone != "13800000001" {
+	if results4[0].Id != 1002 || results4[0].Phone == nil || *results4[0].Phone != "13800000001" {
 		t.Fatal("Result error", sql, results4, r)
 	}
 
@@ -141,7 +141,7 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Query error", sql, results8, r)
 	}
 	r.To(&results8)
-	if results8.Id != 1002 || results8.Phone != "13800000001" || results8.innerId != 2 || results8.Tag != "abc" {
+	if results8.Id != 1002 || results8.Phone == nil || *results8.Phone != "13800000001" || results8.innerId != 2 || results8.Tag != "abc" {
 		t.Fatal("Result error", sql, results8, r)
 	}
 
@@ -172,7 +172,7 @@ func TestBaseSelect(t *testing.T) {
 	r = db.Query(sql)
 	results12 := map[string]userInfo{}
 	r.ToKV(&results12)
-	if results12["1002"].Phone != "13800000001" {
+	if results12["1002"].Phone == nil || *results12["1002"].Phone != "13800000001" {
 		t.Fatal("Result error", sql, results12, r)
 	}
 
@@ -267,16 +267,16 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		t.Fatal("Select userList error", r)
 	}
 	r.To(&userList)
-	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone != "18033336666" || userList[0].Active != false {
+	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone == nil || *userList[0].Phone != "18033336666" || userList[0].Active != false {
 		t.Fatal("Select userList 0 error", userList, r)
 	}
 	if len(userList[0].Parents) != 2 || userList[0].Parents[0] != "dd" {
 		t.Fatal("Select userList 0 Parents error", userList, r)
 	}
-	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone != "18000000222" || userList[1].Active != true {
+	if strings.Split(userList[1].Time, " ")[0] != time.Now().Format("2006-01-02") || userList[1].Id != 2 || userList[1].Name != "Tom Lee" || userList[1].Phone == nil || *userList[1].Phone != "18000000222" || userList[1].Active != true {
 		t.Fatal("Select userList 1 error", userList, r)
 	}
-	if userList[2].Id != 4 || userList[2].Name != "Jerry's Mather" || userList[2].Phone != "18000000004" {
+	if userList[2].Id != 4 || userList[2].Name != "Jerry's Mather" || userList[2].Phone == nil || *userList[2].Phone != "18000000004" {
 		t.Fatal("Select userList 2 error", userList, r)
 	}
 
