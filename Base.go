@@ -171,6 +171,9 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 		getFlatFields(fields, &fieldKeys, dataValue)
 		//for i := 0; i < dataType.NumField(); i++ {
 		for _, k := range fieldKeys {
+			if k[0] >= 'a' && k[0] <= 'z' {
+				continue
+			}
 			v := fields[k]
 			if v.Kind() == reflect.Interface {
 				v = v.Elem()
@@ -180,7 +183,12 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 				vars = append(vars, string([]byte(v.String())[1:]))
 			} else {
 				vars = append(vars, "?")
-				values = append(values, v.Interface())
+				if !v.IsValid() || !v.CanInterface() {
+					values = append(values, nil)
+				}else {
+					values = append(values, v.Interface())
+				}
+				//values = append(values, v.Interface())
 			}
 		}
 	} else if dataType.Kind() == reflect.Map {
@@ -195,7 +203,12 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 				vars = append(vars, string([]byte(v.String())[1:]))
 			} else {
 				vars = append(vars, "?")
-				values = append(values, v.Interface())
+				if !v.IsValid() || !v.CanInterface() {
+					values = append(values, nil)
+				}else {
+					values = append(values, v.Interface())
+				}
+				//values = append(values, v.Interface())
 			}
 		}
 	}
