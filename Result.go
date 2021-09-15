@@ -8,6 +8,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/ssgo/u"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -354,11 +355,37 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 							}
 							if data.FieldByName(publicColName).Kind() == reflect.Ptr && valuePtr.Elem().Kind() == data.FieldByName(publicColName).Type().Elem().Kind() {
 								// 匹配指针类型
-								//fmt.Println("=====5")
 								if valuePtr.Elem().CanAddr() {
-									data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
+									//fmt.Println("=====5", data.FieldByName(publicColName).Type(), valuePtr.Elem().Type())
+									//data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
+									if data.FieldByName(publicColName).Type().AssignableTo(valuePtr.Elem().Type()) {
+										// 类型完全匹配
+										data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
+									} else if valuePtr.Elem().Type().String() == "string" {
+										// 处理字符串类型
+										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
+										data.FieldByName(publicColName).Elem().SetString(u.String(valuePtr.Elem().Interface()))
+									//} else if strings.Contains(valuePtr.Elem().Type().String(), "uint") {
+									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "uint") {
+										// 处理整数类型
+										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
+										data.FieldByName(publicColName).Elem().SetUint(u.Uint64(valuePtr.Elem().Interface()))
+									//} else if strings.Contains(valuePtr.Elem().Type().String(), "int") {
+									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "int") {
+										// 处理整数类型
+										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
+										data.FieldByName(publicColName).Elem().SetInt(u.Int64(valuePtr.Elem().Interface()))
+									//} else if strings.Contains(valuePtr.Elem().Type().String(), "float") {
+									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "float") {
+										// 处理整数类型
+										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
+										data.FieldByName(publicColName).Elem().SetFloat(u.Float64(valuePtr.Elem().Interface()))
+									} else {
+										// TODO 是否有其他特俗情况？
+										data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
+									}
 								}
-							}else {
+							} else {
 								// 类型不匹配
 								//fmt.Println("=====3")
 								convertedObject := reflect.New(data.FieldByName(publicColName).Type())
@@ -371,9 +398,20 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 									u.Convert(valuePtr.Elem().Interface(), convertedObject.Interface())
 								}
 							}
-						} else {
+						} else if field.Type.AssignableTo(valuePtr.Elem().Type()) {
 							// 类型完全匹配
-							//fmt.Println("=====4")
+							data.FieldByName(publicColName).Set(valuePtr.Elem())
+						} else if valuePtr.Elem().Type().String() == "string" {
+							// 处理字符串类型
+							data.FieldByName(publicColName).SetString(valuePtr.Elem().String())
+						} else if strings.Contains(valuePtr.Elem().Type().String(), "int") {
+							// 处理整数类型
+							data.FieldByName(publicColName).SetInt(valuePtr.Elem().Int())
+						} else if strings.Contains(valuePtr.Elem().Type().String(), "float") {
+							// 处理整数类型
+							data.FieldByName(publicColName).SetFloat(valuePtr.Elem().Float())
+						} else {
+							// TODO 是否有其他特俗情况？
 							data.FieldByName(publicColName).Set(valuePtr.Elem())
 						}
 					}

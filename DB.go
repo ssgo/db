@@ -30,11 +30,11 @@ type dbInfo struct {
 
 func (conf *dbInfo) Dsn() string {
 	if strings.HasPrefix(conf.Type, "sqlite") {
-		return conf.Host
+		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", conf.Type, conf.User, conf.Host, conf.LogSlow.TimeDuration())
 	} else {
-		if []byte(conf.Host)[0] == '/' {
-			return conf.Host
-		}
+		//if []byte(conf.Host)[0] == '/' {
+		//	return conf.Host
+		//}
 		hosts := []string{conf.Host}
 		if conf.ReadonlyHosts != nil {
 			hosts = append(hosts, conf.ReadonlyHosts...)
@@ -51,22 +51,25 @@ func (conf *dbInfo) ConfigureBy(setting string) {
 	}
 
 	conf.Type = urlInfo.Scheme
-	if strings.ContainsRune(urlInfo.Host, ',') {
-		// 多个节点，读写分离
-		a := strings.Split(urlInfo.Host, ",")
-		conf.Host = a[0]
-		conf.ReadonlyHosts = a[1:]
+	if strings.HasPrefix(conf.Type, "sqlite") {
+		conf.Host = urlInfo.Host + urlInfo.Path
 	} else {
-		conf.Host = urlInfo.Host
-		conf.ReadonlyHosts = nil
+		if strings.ContainsRune(urlInfo.Host, ',') {
+			// 多个节点，读写分离
+			a := strings.Split(urlInfo.Host, ",")
+			conf.Host = a[0]
+			conf.ReadonlyHosts = a[1:]
+		} else {
+			conf.Host = urlInfo.Host
+			conf.ReadonlyHosts = nil
+		}
+		if len(urlInfo.Path) > 1 {
+			conf.DB = urlInfo.Path[1:]
+		}
 	}
 	conf.User = urlInfo.User.Username()
 	pwd, _ := urlInfo.User.Password()
 	conf.Password = pwd
-
-	if len(urlInfo.Path) > 1 {
-		conf.DB = urlInfo.Path[1:]
-	}
 
 	conf.MaxIdles = u.Int(urlInfo.Query().Get("maxIdles"))
 	conf.MaxLifeTime = u.Int(urlInfo.Query().Get("maxLifeTime"))
@@ -405,7 +408,6 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 func (db *DB) InKeys(numArgs int) string {
 	return InKeys(numArgs)
 }
-
 
 func InKeys(numArgs int) string {
 	a := make([]string, numArgs)
