@@ -142,6 +142,15 @@ func (r *QueryResult) IntOnR1C1() int64 {
 	return result
 }
 
+func (r *QueryResult) FloatOnR1C1() float64 {
+	var result float64 = 0
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
+	return result
+}
+
 func (r *QueryResult) StringOnR1C1() string {
 	result := ""
 	err := r.makeResults(&result, r.rows)
