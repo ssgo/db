@@ -400,7 +400,11 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 								convertedObject := reflect.New(data.FieldByName(publicColName).Type())
 								if s, ok := valuePtr.Elem().Interface().(string); ok {
 									stotedValue := new(interface{})
-									json.Unmarshal([]byte(s), stotedValue)
+									err = json.Unmarshal([]byte(s), stotedValue)
+									if err != nil {
+										r.logger.LogError(err.Error())
+									}
+									//fmt.Println(u.JsonP(stotedValue))
 									u.Convert(stotedValue, convertedObject.Interface())
 									data.FieldByName(publicColName).Set(convertedObject.Elem())
 								} else {
