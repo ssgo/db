@@ -13,12 +13,13 @@ import (
 )
 
 type QueryResult struct {
-	rows     *sql.Rows
-	Sql      *string
-	Args     []interface{}
-	Error    error
-	logger   *dbLogger
-	usedTime float32
+	rows      *sql.Rows
+	Sql       *string
+	Args      []interface{}
+	Error     error
+	logger    *dbLogger
+	usedTime  float32
+	completed bool
 }
 
 type ExecResult struct {
@@ -52,6 +53,15 @@ func (r *ExecResult) Id() int64 {
 		return 0
 	}
 	return insertId
+}
+
+func (r *QueryResult) Complete() {
+	if !r.completed {
+		if r.rows != nil {
+			r.rows.Close()
+		}
+		r.completed = true
+	}
 }
 
 func (r *QueryResult) To(result interface{}) error {
@@ -255,6 +265,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 
 	defer func() {
 		_ = rows.Close()
+		r.completed = true
 	}()
 	resultsValue := reflect.ValueOf(results)
 	if resultsValue.Kind() != reflect.Ptr {
@@ -374,17 +385,17 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 										// 处理字符串类型
 										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
 										data.FieldByName(publicColName).Elem().SetString(u.String(valuePtr.Elem().Interface()))
-									//} else if strings.Contains(valuePtr.Elem().Type().String(), "uint") {
+										//} else if strings.Contains(valuePtr.Elem().Type().String(), "uint") {
 									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "uint") {
 										// 处理整数类型
 										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
 										data.FieldByName(publicColName).Elem().SetUint(u.Uint64(valuePtr.Elem().Interface()))
-									//} else if strings.Contains(valuePtr.Elem().Type().String(), "int") {
+										//} else if strings.Contains(valuePtr.Elem().Type().String(), "int") {
 									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "int") {
 										// 处理整数类型
 										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
 										data.FieldByName(publicColName).Elem().SetInt(u.Int64(valuePtr.Elem().Interface()))
-									//} else if strings.Contains(valuePtr.Elem().Type().String(), "float") {
+										//} else if strings.Contains(valuePtr.Elem().Type().String(), "float") {
 									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "float") {
 										// 处理整数类型
 										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))

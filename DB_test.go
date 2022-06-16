@@ -3,6 +3,7 @@ package db
 import (
 	"github.com/ssgo/log"
 	"github.com/ssgo/u"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,7 @@ func TestMakeInsertSql(t *testing.T) {
 
 func TestBaseSelect(t *testing.T) {
 
+	//n1 := countConnection()
 	sql := "SELECT 1002 id, '13800000001' phone"
 	db := GetDB("test2", nil)
 	if db.Error != nil {
@@ -176,16 +178,20 @@ func TestBaseSelect(t *testing.T) {
 		t.Fatal("Result error", sql, results12, r)
 	}
 
+	//n2 := countConnection()
+	//fmt.Println("# connection count", n1, n2, u.JsonP(db.GetOriginDB().Stats()), ".")
 	//t.Log("OpenConnections", db.GetOriginDB().Stats().OpenConnections)
 }
 
 func TestInsertReplaceUpdateDelete(t *testing.T) {
+	//n1 := countConnection()
+
 	db := initDB(t)
 	er := db.Insert("tempUsersForDBTest", map[string]interface{}{
-		"phone": 18033336666,
-		"name":  "Star",
-		"parents": []string{"dd","mm"},
-		"time":  ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
+		"phone":   18033336666,
+		"name":    "Star",
+		"parents": []string{"dd", "mm"},
+		"time":    ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
 	})
 	if er.Error != nil {
 		t.Fatal("Insert 1 error", er)
@@ -281,9 +287,14 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 	}
 
 	finishDB(db, t)
+
+	//n2 := countConnection()
+	//fmt.Println("# connection count", n1, n2, u.JsonP(db.GetOriginDB().Stats()), ".")
 }
 
 func TestTransaction(t *testing.T) {
+	//n1 := countConnection()
+
 	var userList []userInfo
 
 	db := initDB(t)
@@ -347,6 +358,9 @@ func TestTransaction(t *testing.T) {
 	if r.Error != nil || len(userList) != 1 {
 		t.Fatal("Select When Commit", userList, r)
 	}
+
+	//n2 := countConnection()
+	//fmt.Println("# connection count", n1, n2, u.JsonP(db.GetOriginDB().Stats()), ".")
 }
 
 func initDB(t *testing.T) *DB {
@@ -379,6 +393,22 @@ func finishDB(db *DB, t *testing.T) {
 	}
 }
 
+func countConnection() int {
+	n := 0
+	lines, _ := u.RunCommand("netstat", "-ant")
+	spliter := regexp.MustCompile("\\s+")
+	for _, line := range lines {
+		if strings.Contains(line, ".3306") && strings.Contains(line, "ESTABLISHED") {
+			a := spliter.Split(line, 10)
+			if strings.Contains(a[4], ".3306") {
+				//fmt.Println(line)
+				n++
+			}
+		}
+	}
+	return n
+}
+
 func BenchmarkForPool(b *testing.B) {
 
 	b.StopTimer()
@@ -405,6 +435,7 @@ func BenchmarkForPool(b *testing.B) {
 }
 
 func BenchmarkForPoolParallel(b *testing.B) {
+	//n1 := countConnection()
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
@@ -429,4 +460,7 @@ func BenchmarkForPoolParallel(b *testing.B) {
 		}
 	})
 	b.Log("OpenConnections", db.GetOriginDB().Stats().OpenConnections)
+
+	//n2 := countConnection()
+	//fmt.Println("# connection count", n1, n2, u.JsonP(db.GetOriginDB().Stats()), ".")
 }
