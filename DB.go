@@ -18,9 +18,11 @@ type dbInfo struct {
 	Type          string
 	User          string
 	Password      string
+	pwd           string
 	Host          string
 	ReadonlyHosts []string
 	DB            string
+	SSL           string
 	MaxOpens      int
 	MaxIdles      int
 	MaxLifeTime   int
@@ -28,53 +30,65 @@ type dbInfo struct {
 	logger        *log.Logger
 }
 
-func (conf *dbInfo) Dsn() string {
-	if strings.HasPrefix(conf.Type, "sqlite") {
-		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", conf.Type, conf.User, conf.Host, conf.LogSlow.TimeDuration())
+type dbSSL struct {
+	Ca       string
+	Cert     string
+	Key      string
+	Insecure bool
+}
+
+func (dbInfo *dbInfo) Dsn() string {
+	if strings.HasPrefix(dbInfo.Type, "sqlite") {
+		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
 	} else {
 		//if []byte(conf.Host)[0] == '/' {
 		//	return conf.Host
 		//}
-		hosts := []string{conf.Host}
-		if conf.ReadonlyHosts != nil {
-			hosts = append(hosts, conf.ReadonlyHosts...)
+		hosts := []string{dbInfo.Host}
+		if dbInfo.ReadonlyHosts != nil {
+			hosts = append(hosts, dbInfo.ReadonlyHosts...)
 		}
-		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s", conf.Type, conf.User, strings.Join(hosts, ","), conf.DB, conf.LogSlow.TimeDuration())
+		sslStr := ""
+		if dbInfo.SSL != "" {
+			sslStr = "&tls=" + dbInfo.SSL
+		}
+		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s"+sslStr, dbInfo.Type, dbInfo.User, strings.Join(hosts, ","), dbInfo.DB, dbInfo.LogSlow.TimeDuration())
 	}
 }
 
-func (conf *dbInfo) ConfigureBy(setting string) {
+func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	urlInfo, err := url.Parse(setting)
 	if err != nil {
-		conf.logger.Error(err.Error(), "url", setting)
+		dbInfo.logger.Error(err.Error(), "url", setting)
 		return
 	}
 
-	conf.Type = urlInfo.Scheme
-	if strings.HasPrefix(conf.Type, "sqlite") {
-		conf.Host = urlInfo.Host + urlInfo.Path
+	dbInfo.Type = urlInfo.Scheme
+	if strings.HasPrefix(dbInfo.Type, "sqlite") {
+		dbInfo.Host = urlInfo.Host + urlInfo.Path
 	} else {
 		if strings.ContainsRune(urlInfo.Host, ',') {
 			// 多个节点，读写分离
 			a := strings.Split(urlInfo.Host, ",")
-			conf.Host = a[0]
-			conf.ReadonlyHosts = a[1:]
+			dbInfo.Host = a[0]
+			dbInfo.ReadonlyHosts = a[1:]
 		} else {
-			conf.Host = urlInfo.Host
-			conf.ReadonlyHosts = nil
+			dbInfo.Host = urlInfo.Host
+			dbInfo.ReadonlyHosts = nil
 		}
 		if len(urlInfo.Path) > 1 {
-			conf.DB = urlInfo.Path[1:]
+			dbInfo.DB = urlInfo.Path[1:]
 		}
 	}
-	conf.User = urlInfo.User.Username()
-	pwd, _ := urlInfo.User.Password()
-	conf.Password = pwd
+	dbInfo.User = urlInfo.User.Username()
+	dbInfo.pwd, _ = urlInfo.User.Password()
+	dbInfo.Password = ""
 
-	conf.MaxIdles = u.Int(urlInfo.Query().Get("maxIdles"))
-	conf.MaxLifeTime = u.Int(urlInfo.Query().Get("maxLifeTime"))
-	conf.MaxOpens = u.Int(urlInfo.Query().Get("maxOpens"))
-	conf.LogSlow = config.Duration(u.Duration(urlInfo.Query().Get("logSlow")))
+	dbInfo.MaxIdles = u.Int(urlInfo.Query().Get("maxIdles"))
+	dbInfo.MaxLifeTime = u.Int(urlInfo.Query().Get("maxLifeTime"))
+	dbInfo.MaxOpens = u.Int(urlInfo.Query().Get("maxOpens"))
+	dbInfo.LogSlow = config.Duration(u.Duration(urlInfo.Query().Get("logSlow")))
+	dbInfo.SSL = urlInfo.Query().Get("tls")
 }
 
 type DB struct {
@@ -117,6 +131,7 @@ func (dl *dbLogger) LogQueryError(error string, query string, args []interface{}
 }
 
 var dbConfigs = make(map[string]*dbInfo)
+var dbSSLs = make(map[string]*dbSSL)
 var dbInstances = make(map[string]*DB)
 var once sync.Once
 
@@ -164,6 +179,29 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.DB = "test"
 	}
 
+	if conf.SSL != "" && len(dbSSLs) == 0 {
+		config.LoadConfig("dbssl", &dbSSLs)
+		for sslName, sslInfo := range dbSSLs {
+			decryptedCa := u.DecryptAes(sslInfo.Ca, settedKey, settedIv)
+			decryptedCert := u.DecryptAes(sslInfo.Cert, settedKey, settedIv)
+			decryptedKey := u.DecryptAes(sslInfo.Key, settedKey, settedIv)
+			if decryptedCa == "" {
+				decryptedCa = sslInfo.Ca
+			}
+			if decryptedCert == "" {
+				decryptedCert = sslInfo.Cert
+			}
+			if decryptedKey == "" {
+				decryptedKey = sslInfo.Key
+			}
+			RegisterSSL(sslName, decryptedCa, decryptedCert, decryptedKey, sslInfo.Insecure)
+		}
+	}
+
+	if conf.SSL != "" && dbSSLs[conf.SSL] == nil {
+		logger.Error("dbssl config lost")
+	}
+
 	if strings.ContainsRune(conf.Host, ',') {
 		// 多个节点，读写分离
 		a := strings.Split(conf.Host, ",")
@@ -173,12 +211,11 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.ReadonlyHosts = nil
 	}
 
-	decryptedPassword := ""
 	if conf.Password != "" {
-		decryptedPassword = u.DecryptAes(conf.Password, settedKey, settedIv)
-		if decryptedPassword == "" {
+		conf.pwd = u.DecryptAes(conf.Password, settedKey, settedIv)
+		if conf.pwd == "" {
 			log.DefaultLogger.Warning("password is invalid")
-			decryptedPassword = conf.Password
+			conf.pwd = conf.Password
 		}
 	} else {
 		if !strings.HasPrefix(conf.Type, "sqlite") {
@@ -186,7 +223,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 			logger.Warning("password is empty")
 		}
 	}
-	conf.Password = u.UniqueId()
+	conf.Password = ""
 
 	//connectType := "tcp"
 	//if []byte(conf.Host)[0] == '/' {
@@ -204,7 +241,8 @@ func GetDB(name string, logger *log.Logger) *DB {
 	//	logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 	//	return &DB{conn: nil, Error: err}
 	//}
-	conn, err := getPool(conf.Type, conf.Host, conf.User, decryptedPassword, conf.DB)
+	//conn, err := getPool(conf.Type, conf.Host, conf.User, decryptedPassword, conf.DB)
+	conn, err := getPool(conf)
 	if err != nil {
 		logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 		return &DB{conn: nil, Error: err}
@@ -217,7 +255,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 	if conf.ReadonlyHosts != nil {
 		readonlyConnections := make([]*sql.DB, 0)
 		for _, host := range conf.ReadonlyHosts {
-			conn, err := getPool(conf.Type, host, conf.User, decryptedPassword, conf.DB)
+			conn, err := getPoolForHost(conf, host)
 			if err != nil {
 				logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
 			} else {
@@ -247,19 +285,35 @@ func GetDB(name string, logger *log.Logger) *DB {
 	return db.CopyByLogger(logger)
 }
 
-func getPool(typ, host, user, pwd, db string) (*sql.DB, error) {
+//func getPool(typ, host, user, pwd, db string) (*sql.DB, error) {
+func getPool(conf *dbInfo) (*sql.DB, error) {
+	return getPoolForHost(conf, "")
+}
+
+func getPoolForHost(conf *dbInfo, host string) (*sql.DB, error) {
 	connectType := "tcp"
+	if host == "" {
+		host = conf.Host
+	}
 	if []byte(host)[0] == '/' {
 		connectType = "unix"
 	}
 
 	dsn := ""
-	if strings.HasPrefix(typ, "sqlite") {
+	if strings.HasPrefix(conf.Type, "sqlite") {
 		dsn = host
+		if conf.pwd != "" {
+			dsn += fmt.Sprint("?_auth&_auth_user=", conf.User, "&_auth_pass=", conf.pwd, "&_auth_crypt=sha512")
+		}
 	} else {
-		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s", user, pwd, connectType, host, db)
+		sslStr := ""
+		if conf.SSL != "" {
+			sslStr = "?tls=" + conf.SSL
+		}
+		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s"+sslStr, conf.User, conf.pwd, connectType, host, conf.DB)
 	}
-	return sql.Open(typ, dsn)
+	//fmt.Println(222, dsn)
+	return sql.Open(conf.Type, dsn)
 }
 
 func (db *DB) CopyByLogger(logger *log.Logger) *DB {

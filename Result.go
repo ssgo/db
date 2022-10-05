@@ -411,9 +411,11 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 								convertedObject := reflect.New(data.FieldByName(publicColName).Type())
 								if s, ok := valuePtr.Elem().Interface().(string); ok {
 									stotedValue := new(interface{})
-									err = json.Unmarshal([]byte(s), stotedValue)
-									if err != nil {
-										r.logger.LogError(err.Error())
+									if s != "" {
+										err = json.Unmarshal([]byte(s), stotedValue)
+										if err != nil {
+											r.logger.LogError(err.Error())
+										}
 									}
 									//fmt.Println(u.JsonP(stotedValue))
 									u.Convert(stotedValue, convertedObject.Interface())

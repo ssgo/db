@@ -43,11 +43,16 @@ func (tx *Tx) Rollback() error {
 	return err
 }
 
-func (tx *Tx) Finish() error {
-	if tx.isCommitedOrRollbacked {
-		return nil
+func (tx *Tx) Finish(ok bool) error {
+	if ok {
+		return tx.Commit()
+	} else {
+		return tx.Rollback()
 	}
-	return tx.Rollback()
+	//if tx.isCommitedOrRollbacked {
+	//	return nil
+	//}
+	//return tx.Rollback()
 }
 
 func (tx *Tx) Prepare(requestSql string) *Stmt {
@@ -68,7 +73,7 @@ func (tx *Tx) Exec(requestSql string, args ...interface{}) *ExecResult {
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
 	} else {
-		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow / time.Millisecond) {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
 			// 记录慢请求日志
 			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
 		}
@@ -84,7 +89,7 @@ func (tx *Tx) Query(requestSql string, args ...interface{}) *QueryResult {
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
 	} else {
-		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow / time.Millisecond) {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
 			// 记录慢请求日志
 			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
 		}
@@ -101,7 +106,7 @@ func (tx *Tx) Insert(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
 	} else {
-		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow / time.Millisecond) {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
 			// 记录慢请求日志
 			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
 		}
@@ -117,7 +122,7 @@ func (tx *Tx) Replace(table string, data interface{}) *ExecResult {
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
 	} else {
-		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow / time.Millisecond) {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
 			// 记录慢请求日志
 			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
 		}
@@ -134,7 +139,7 @@ func (tx *Tx) Update(table string, data interface{}, wheres string, args ...inte
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
 	} else {
-		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow / time.Millisecond) {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
 			// 记录慢请求日志
 			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
 		}
