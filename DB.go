@@ -131,8 +131,10 @@ func (dl *dbLogger) LogQueryError(error string, query string, args []interface{}
 }
 
 var dbConfigs = make(map[string]*dbInfo)
+var dbConfigsLock = sync.RWMutex{}
 var dbSSLs = make(map[string]*dbSSL)
 var dbInstances = make(map[string]*DB)
+var dbInstancesLock = sync.RWMutex{}
 var once sync.Once
 
 func GetDB(name string, logger *log.Logger) *DB {
@@ -140,8 +142,11 @@ func GetDB(name string, logger *log.Logger) *DB {
 		logger = log.DefaultLogger
 	}
 
-	if dbInstances[name] != nil {
-		return dbInstances[name].CopyByLogger(logger)
+	dbInstancesLock.RLock()
+	oldConn := dbInstances[name]
+	dbInstancesLock.RUnlock()
+	if oldConn != nil {
+		return oldConn.CopyByLogger(logger)
 	}
 
 	var conf *dbInfo
@@ -150,7 +155,10 @@ func GetDB(name string, logger *log.Logger) *DB {
 		conf.logger = logger
 		conf.ConfigureBy(name)
 	} else {
-		if len(dbConfigs) == 0 {
+		dbConfigsLock.RLock()
+		n := len(dbConfigs)
+		dbConfigsLock.RUnlock()
+		if n == 0 {
 			once.Do(func() {
 				errs := config.LoadConfig("db", &dbConfigs)
 				if errs != nil {
@@ -160,10 +168,14 @@ func GetDB(name string, logger *log.Logger) *DB {
 				}
 			})
 		}
+		dbConfigsLock.RLock()
 		conf = dbConfigs[name]
+		dbConfigsLock.RUnlock()
 		if conf == nil {
 			conf = new(dbInfo)
+			dbConfigsLock.Lock()
 			dbConfigs[name] = conf
+			dbConfigsLock.Unlock()
 		}
 	}
 	if conf.Host == "" {
@@ -281,7 +293,9 @@ func GetDB(name string, logger *log.Logger) *DB {
 	if conf.LogSlow == 0 {
 		conf.LogSlow = config.Duration(1000 * time.Millisecond)
 	}
+	dbInstancesLock.Lock()
 	dbInstances[name] = db
+	dbInstancesLock.Unlock()
 	return db.CopyByLogger(logger)
 }
 

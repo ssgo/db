@@ -116,6 +116,15 @@ func (r *QueryResult) MapOnR1() map[string]interface{} {
 	return result
 }
 
+func (r *QueryResult) StringMapOnR1() map[string]string {
+	result := make(map[string]string)
+	err := r.makeResults(&result, r.rows)
+	if err != nil {
+		r.logger.LogQueryError(err.Error(), *r.Sql, r.Args, r.usedTime)
+	}
+	return result
+}
+
 //func (r *QueryResult) SliceOnR1() []interface{} {
 //	result := make([]interface{}, 0)
 //	err := r.makeResults(&result, r.rows)
