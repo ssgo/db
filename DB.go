@@ -7,6 +7,7 @@ import (
 	"github.com/ssgo/config"
 	"github.com/ssgo/log"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type dbInfo struct {
 	ReadonlyHosts []string
 	DB            string
 	SSL           string
+	Args          string
 	MaxOpens      int
 	MaxIdles      int
 	MaxLifeTime   int
@@ -37,9 +39,23 @@ type dbSSL struct {
 	Insecure bool
 }
 
+var sqlite3PwdMatcher = regexp.MustCompile("x'\\w+'")
 func (dbInfo *dbInfo) Dsn() string {
+	args := make([]string, 0)
+	if dbInfo.SSL != "" {
+		args = append(args, "tls="+dbInfo.SSL)
+	}
+	if dbInfo.Args != "" {
+		args = append(args, dbInfo.Args)
+	}
+	argsStr := ""
+	if len(args) > 0 {
+		argsStr = "&" + strings.Join(args, "&")
+	}
+
 	if strings.HasPrefix(dbInfo.Type, "sqlite") {
-		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
+		argsStr = sqlite3PwdMatcher.ReplaceAllString(argsStr, "******")
+		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
 	} else {
 		//if []byte(conf.Host)[0] == '/' {
 		//	return conf.Host
@@ -48,11 +64,7 @@ func (dbInfo *dbInfo) Dsn() string {
 		if dbInfo.ReadonlyHosts != nil {
 			hosts = append(hosts, dbInfo.ReadonlyHosts...)
 		}
-		sslStr := ""
-		if dbInfo.SSL != "" {
-			sslStr = "&tls=" + dbInfo.SSL
-		}
-		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s"+sslStr, dbInfo.Type, dbInfo.User, strings.Join(hosts, ","), dbInfo.DB, dbInfo.LogSlow.TimeDuration())
+		return fmt.Sprintf("%s://%s:****@%s/%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.User, strings.Join(hosts, ","), dbInfo.DB, dbInfo.LogSlow.TimeDuration())
 	}
 }
 
@@ -84,11 +96,22 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	dbInfo.pwd, _ = urlInfo.User.Password()
 	dbInfo.Password = ""
 
-	dbInfo.MaxIdles = u.Int(urlInfo.Query().Get("maxIdles"))
-	dbInfo.MaxLifeTime = u.Int(urlInfo.Query().Get("maxLifeTime"))
-	dbInfo.MaxOpens = u.Int(urlInfo.Query().Get("maxOpens"))
-	dbInfo.LogSlow = config.Duration(u.Duration(urlInfo.Query().Get("logSlow")))
-	dbInfo.SSL = urlInfo.Query().Get("tls")
+	q := urlInfo.Query()
+	dbInfo.MaxIdles = u.Int(q.Get("maxIdles"))
+	dbInfo.MaxLifeTime = u.Int(q.Get("maxLifeTime"))
+	dbInfo.MaxOpens = u.Int(q.Get("maxOpens"))
+	dbInfo.LogSlow = config.Duration(u.Duration(q.Get("logSlow")))
+	dbInfo.SSL = q.Get("tls")
+
+	args := make([]string, 0)
+	for k := range q {
+		if k != "maxIdles" && k != "maxLifeTime" && k != "maxOpens" && k != "logSlow" && k != "tls" {
+			args = append(args, k+"="+q.Get(k))
+		}
+	}
+	if len(args) > 0 {
+		dbInfo.Args = strings.Join(args, "&")
+	}
 }
 
 type DB struct {
@@ -314,17 +337,29 @@ func getPoolForHost(conf *dbInfo, host string) (*sql.DB, error) {
 	}
 
 	dsn := ""
+	args := make([]string, 0)
+	if conf.SSL != "" {
+		args = append(args, "tls="+conf.SSL)
+	}
+	if conf.Args != "" {
+		args = append(args, conf.Args)
+	}
+	argsStr := ""
+	if len(args) > 0 {
+		argsStr = "?" + strings.Join(args, "&")
+	}
 	if strings.HasPrefix(conf.Type, "sqlite") {
-		dsn = host
-		if conf.pwd != "" {
-			dsn += fmt.Sprint("?_auth&_auth_user=", conf.User, "&_auth_pass=", conf.pwd, "&_auth_crypt=sha512")
-		}
+		dsn = host + argsStr
+		//fmt.Println("   >>>>>>>>", dsn)
+		//if conf.pwd != "" {
+		//	dsn += fmt.Sprint("?_auth&_auth_user=", conf.User, "&_auth_pass=", conf.pwd, "&_auth_crypt=sha512")
+		//}
 	} else {
-		sslStr := ""
-		if conf.SSL != "" {
-			sslStr = "?tls=" + conf.SSL
-		}
-		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s"+sslStr, conf.User, conf.pwd, connectType, host, conf.DB)
+		//sslStr := ""
+		//if conf.SSL != "" {
+		//	sslStr = "?tls=" + conf.SSL
+		//}
+		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s"+argsStr, conf.User, conf.pwd, connectType, host, conf.DB)
 	}
 	//fmt.Println(222, dsn)
 	return sql.Open(conf.Type, dsn)
