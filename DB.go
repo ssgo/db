@@ -93,8 +93,8 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 		}
 	}
 	dbInfo.User = urlInfo.User.Username()
-	dbInfo.pwd, _ = urlInfo.User.Password()
-	dbInfo.Password = ""
+	dbInfo.pwd = ""
+	dbInfo.Password, _ = urlInfo.User.Password()
 
 	q := urlInfo.Query()
 	dbInfo.MaxIdles = u.Int(q.Get("maxIdles"))
@@ -245,6 +245,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 	} else {
 		conf.ReadonlyHosts = nil
 	}
+
 
 	if conf.Password != "" {
 		conf.pwd = u.DecryptAes(conf.Password, settedKey, settedIv)
