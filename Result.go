@@ -464,6 +464,8 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
 					data.SetMapIndex(reflect.ValueOf(col.Name()), valuePtr.Elem())
+				}else{
+					data.SetMapIndex(reflect.ValueOf(col.Name()), reflect.New(rowType.Elem()).Elem())
 				}
 			}
 		} else if rowType.Kind() == reflect.Slice {
@@ -473,6 +475,8 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
 					data.Index(colIndex).Set(valuePtr.Elem())
+				}else {
+					data.Index(colIndex).Set(reflect.New(rowType.Elem()).Elem())
 				}
 			}
 		} else {

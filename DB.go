@@ -55,7 +55,8 @@ func (dbInfo *dbInfo) Dsn() string {
 
 	if strings.HasPrefix(dbInfo.Type, "sqlite") {
 		argsStr = sqlite3PwdMatcher.ReplaceAllString(argsStr, "******")
-		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
+		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
+		//return fmt.Sprintf("%s://%s:****@%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
 	} else {
 		//if []byte(conf.Host)[0] == '/' {
 		//	return conf.Host

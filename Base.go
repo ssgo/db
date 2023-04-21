@@ -135,7 +135,10 @@ func makeUpdateSql(table string, data interface{}, wheres string, args ...interf
 	for _, v := range args {
 		values = append(values, v)
 	}
-	requestSql := fmt.Sprintf("update %s set %s where %s", makeTableName(table), strings.Join(keys, ","), wheres)
+	if wheres != "" {
+		wheres = " where "+wheres
+	}
+	requestSql := fmt.Sprintf("update %s set %s%s", makeTableName(table), strings.Join(keys, ","), wheres)
 	return requestSql, values
 }
 

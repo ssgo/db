@@ -55,6 +55,13 @@ func (tx *Tx) Finish(ok bool) error {
 	//return tx.Rollback()
 }
 
+func (tx *Tx) CheckFinished() error {
+	if tx.isCommitedOrRollbacked {
+		return nil
+	}
+	return tx.Rollback()
+}
+
 func (tx *Tx) Prepare(requestSql string) *Stmt {
 	tx.lastSql = &requestSql
 	r := basePrepare(nil, tx.conn, requestSql)
