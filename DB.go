@@ -510,6 +510,24 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 	return r
 }
 
+func (db *DB) Delete(table string, wheres string, args ...interface{}) *ExecResult {
+	if wheres != "" {
+		wheres = " where "+wheres
+	}
+	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
+	r := baseExec(db.conn, nil, requestSql, args...)
+	r.logger = db.logger
+	if r.Error != nil {
+		db.logger.LogQueryError(r.Error.Error(), requestSql, args, r.usedTime)
+	} else {
+		if db.Config.LogSlow > 0 && r.usedTime >= float32(db.Config.LogSlow.TimeDuration()/time.Millisecond) {
+			// 记录慢请求日志
+			db.logger.LogQuery(requestSql, args, r.usedTime)
+		}
+	}
+	return r
+}
+
 func (db *DB) InKeys(numArgs int) string {
 	return InKeys(numArgs)
 }

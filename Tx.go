@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -142,6 +143,26 @@ func (tx *Tx) Update(table string, data interface{}, wheres string, args ...inte
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
+	r.logger = tx.logger
+	if r.Error != nil {
+		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
+	} else {
+		if tx.logSlow > 0 && r.usedTime >= float32(tx.logSlow/time.Millisecond) {
+			// 记录慢请求日志
+			tx.logger.LogQuery(*tx.lastSql, tx.lastArgs, r.usedTime)
+		}
+	}
+	return r
+}
+
+func (tx *Tx) Delete(table string, wheres string, args ...interface{}) *ExecResult {
+	if wheres != "" {
+		wheres = " where "+wheres
+	}
+	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
+	tx.lastSql = &requestSql
+	tx.lastArgs = args
+	r := baseExec(nil, tx.conn, requestSql, args...)
 	r.logger = tx.logger
 	if r.Error != nil {
 		tx.logger.LogQueryError(r.Error.Error(), *tx.lastSql, tx.lastArgs, r.usedTime)
