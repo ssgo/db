@@ -40,6 +40,7 @@ type dbSSL struct {
 }
 
 var sqlite3PwdMatcher = regexp.MustCompile("x'\\w+'")
+
 func (dbInfo *dbInfo) Dsn() string {
 	args := make([]string, 0)
 	if dbInfo.SSL != "" {
@@ -103,6 +104,17 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	dbInfo.MaxOpens = u.Int(q.Get("maxOpens"))
 	dbInfo.LogSlow = config.Duration(u.Duration(q.Get("logSlow")))
 	dbInfo.SSL = q.Get("tls")
+
+	// use SSL from params
+	sslCa := q.Get("sslCA")
+	sslCert := q.Get("sslCert")
+	sslKey := q.Get("sslKey")
+	sslSkipVerify := u.Bool(q.Get("sslSkipVerify"))
+	if sslCa != "" && sslCert != "" && sslKey != "" {
+		sslName := u.UniqueId()
+		dbInfo.SSL = sslName
+		RegisterSSL(sslName, u.DecryptAes(sslCa, settedKey, settedIv), u.DecryptAes(sslCert, settedKey, settedIv), u.DecryptAes(sslKey, settedKey, settedIv), sslSkipVerify)
+	}
 
 	args := make([]string, 0)
 	for k := range q {
@@ -246,7 +258,6 @@ func GetDB(name string, logger *log.Logger) *DB {
 	} else {
 		conf.ReadonlyHosts = nil
 	}
-
 
 	if conf.Password != "" {
 		conf.pwd = u.DecryptAes(conf.Password, settedKey, settedIv)
@@ -512,7 +523,7 @@ func (db *DB) Update(table string, data interface{}, wheres string, args ...inte
 
 func (db *DB) Delete(table string, wheres string, args ...interface{}) *ExecResult {
 	if wheres != "" {
-		wheres = " where "+wheres
+		wheres = " where " + wheres
 	}
 	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
 	r := baseExec(db.conn, nil, requestSql, args...)
