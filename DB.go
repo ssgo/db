@@ -80,6 +80,7 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	dbInfo.Type = urlInfo.Scheme
 	if strings.HasPrefix(dbInfo.Type, "sqlite") {
 		dbInfo.Host = urlInfo.Host + urlInfo.Path
+		dbInfo.DB = strings.SplitN(urlInfo.Host, ".", 2)[0]
 	} else {
 		if strings.ContainsRune(urlInfo.Host, ',') {
 			// 多个节点，读写分离
