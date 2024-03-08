@@ -129,6 +129,7 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 }
 
 type DB struct {
+	name                string
 	conn                *sql.DB
 	readonlyConnections []*sql.DB
 	Config              *dbInfo
@@ -298,6 +299,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 	}
 
 	db := new(DB)
+	db.name = name
 	db.conn = conn
 
 	// 创建只读连接池
@@ -381,6 +383,7 @@ func getPoolForHost(conf *dbInfo, host string) (*sql.DB, error) {
 
 func (db *DB) CopyByLogger(logger *log.Logger) *DB {
 	newDB := new(DB)
+	newDB.name = db.name
 	newDB.conn = db.conn
 	newDB.readonlyConnections = db.readonlyConnections
 	newDB.Config = db.Config
@@ -408,6 +411,9 @@ func (db *DB) Destroy() error {
 	if err != nil {
 		db.logger.LogError(err.Error())
 	}
+	dbInstancesLock.Lock()
+	delete(dbInstances, db.name)
+	dbInstancesLock.Unlock()
 	return err
 }
 
