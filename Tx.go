@@ -18,6 +18,9 @@ type Tx struct {
 }
 
 func (tx *Tx) Commit() error {
+	if tx.isCommitedOrRollbacked {
+		return nil
+	}
 	if tx.conn == nil {
 		return errors.New("operate on a bad connection")
 	}
@@ -31,6 +34,9 @@ func (tx *Tx) Commit() error {
 }
 
 func (tx *Tx) Rollback() error {
+	if tx.isCommitedOrRollbacked {
+		return nil
+	}
 	if tx.conn == nil {
 		return errors.New("operate on a bad connection")
 	}
@@ -45,6 +51,9 @@ func (tx *Tx) Rollback() error {
 }
 
 func (tx *Tx) Finish(ok bool) error {
+	if tx.isCommitedOrRollbacked {
+		return nil
+	}
 	if ok {
 		return tx.Commit()
 	} else {
@@ -157,7 +166,7 @@ func (tx *Tx) Update(table string, data interface{}, wheres string, args ...inte
 
 func (tx *Tx) Delete(table string, wheres string, args ...interface{}) *ExecResult {
 	if wheres != "" {
-		wheres = " where "+wheres
+		wheres = " where " + wheres
 	}
 	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
 	tx.lastSql = &requestSql
