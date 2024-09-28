@@ -364,6 +364,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				data = resultsValue
 				isNew = false
 			}
+
 			for colIndex, col := range colTypes {
 				publicColName := makePublicVarName(col.Name())
 				field, found := rowType.FieldByName(publicColName)
@@ -464,7 +465,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
 					data.SetMapIndex(reflect.ValueOf(col.Name()), valuePtr.Elem())
-				}else{
+				} else {
 					data.SetMapIndex(reflect.ValueOf(col.Name()), reflect.New(rowType.Elem()).Elem())
 				}
 			}
@@ -475,7 +476,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
 					data.Index(colIndex).Set(valuePtr.Elem())
-				}else {
+				} else {
 					data.Index(colIndex).Set(reflect.New(rowType.Elem()).Elem())
 				}
 			}
@@ -562,8 +563,9 @@ func makeValue(t reflect.Type) interface{} {
 		return new(*string)
 	}
 
+	if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
+		return new(*[]byte)
+	}
+
 	return new(*string)
-	//if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8{
-	//	return new(string)
-	//}
 }
