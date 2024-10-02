@@ -114,8 +114,8 @@ func makeTableName(table string) string {
 	return table
 }
 
-func makeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
-	keys, vars, values := makeKeysVarsValues(data)
+func MakeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
+	keys, vars, values := MakeKeysVarsValues(data)
 	var operation string
 	if useReplace {
 		operation = "replace"
@@ -126,9 +126,9 @@ func makeInsertSql(table string, data interface{}, useReplace bool) (string, []i
 	return requestSql, values
 }
 
-func makeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
+func MakeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
 	args = flatArgs(args)
-	keys, vars, values := makeKeysVarsValues(data)
+	keys, vars, values := MakeKeysVarsValues(data)
 	for i, k := range keys {
 		keys[i] = fmt.Sprintf("`%s`=%s", k, vars[i])
 	}
@@ -136,7 +136,7 @@ func makeUpdateSql(table string, data interface{}, wheres string, args ...interf
 		values = append(values, v)
 	}
 	if wheres != "" {
-		wheres = " where "+wheres
+		wheres = " where " + wheres
 	}
 	requestSql := fmt.Sprintf("update %s set %s%s", makeTableName(table), strings.Join(keys, ","), wheres)
 	return requestSql, values
@@ -155,7 +155,7 @@ func getFlatFields(fields map[string]reflect.Value, fieldKeys *[]string, value r
 	}
 }
 
-func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
+func MakeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 	keys := make([]string, 0)
 	vars := make([]string, 0)
 	values := make([]interface{}, 0)
@@ -188,7 +188,7 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 				vars = append(vars, "?")
 				if !v.IsValid() || !v.CanInterface() {
 					values = append(values, nil)
-				}else {
+				} else {
 					values = append(values, v.Interface())
 				}
 				//values = append(values, v.Interface())
@@ -208,7 +208,7 @@ func makeKeysVarsValues(data interface{}) ([]string, []string, []interface{}) {
 				vars = append(vars, "?")
 				if !v.IsValid() || !v.CanInterface() {
 					values = append(values, nil)
-				}else {
+				} else {
 					values = append(values, v.Interface())
 				}
 				//values = append(values, v.Interface())

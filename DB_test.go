@@ -1,6 +1,7 @@
-package db
+package db_test
 
 import (
+	"github.com/ssgo/db"
 	"github.com/ssgo/log"
 	"github.com/ssgo/u"
 	"regexp"
@@ -11,8 +12,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-//var dbset = "mysql://root:@localhost/test?logSlow=1"
-//var dbset = "mysql://localhost/test"
+// var dbset = "mysql://root:@localhost/test?logSlow=1"
+// var dbset = "mysql://localhost/test"
 var dbset = "test"
 
 type userInfo struct {
@@ -55,7 +56,7 @@ func TestMakeInsertSql(t *testing.T) {
 		Salt:       "de312",
 	}
 
-	requestSql, _ := makeInsertSql("table_name", user, false)
+	requestSql, _ := db.MakeInsertSql("table_name", user, false)
 	if requestSql != "insert into `table_name` (`Id`,`Name`,`Password`,`Phone`,`Active`,`Parents`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?,?,?)" {
 		t.Fatal("MakeInsertSql requestSql error ", requestSql)
 	}
@@ -65,7 +66,7 @@ func TestBaseSelect(t *testing.T) {
 
 	//n1 := countConnection()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB("test2", nil)
+	db := db.GetDB("test2", nil)
 	if db.Error != nil {
 		t.Fatal("GetDB error", db.Error)
 		return
@@ -363,8 +364,8 @@ func TestTransaction(t *testing.T) {
 	//fmt.Println("# connection count", n1, n2, u.JsonP(db.GetOriginDB().Stats()), ".")
 }
 
-func initDB(t *testing.T) *DB {
-	db := GetDB(dbset, log.New(u.ShortUniqueId()))
+func initDB(t *testing.T) *db.DB {
+	db := db.GetDB(dbset, log.New(u.ShortUniqueId()))
 	if db.Error != nil {
 		t.Fatal("GetDB error", db)
 		return nil
@@ -386,7 +387,7 @@ func initDB(t *testing.T) *DB {
 	return db
 }
 
-func finishDB(db *DB, t *testing.T) {
+func finishDB(db *db.DB, t *testing.T) {
 	er := db.Exec(`DROP TABLE IF EXISTS tempUsersForDBTest;`)
 	if er.Error != nil {
 		t.Fatal("Failed to create table", er)
@@ -413,7 +414,7 @@ func BenchmarkForPool(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB(dbset, nil)
+	db := db.GetDB(dbset, nil)
 	if db.Error != nil {
 		b.Fatal("GetDB error", db)
 		return
@@ -439,7 +440,7 @@ func BenchmarkForPoolParallel(b *testing.B) {
 
 	b.StopTimer()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := GetDB(dbset, nil)
+	db := db.GetDB(dbset, nil)
 	if db.Error != nil {
 		b.Fatal("GetDB error", db)
 		return

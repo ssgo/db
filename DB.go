@@ -268,8 +268,8 @@ func GetDB(name string, logger *log.Logger) *DB {
 			conf.pwd = conf.Password
 		}
 	} else {
-		if !strings.HasPrefix(conf.Type, "sqlite") {
-			//logWarn("password is empty", nil)
+		// sqlite or default config for mysql don't warning empty password
+		if !strings.HasPrefix(conf.Type, "sqlite") && conf.Host != "127.0.0.1:3306" && conf.User == "root" {
 			logger.Warning("password is empty")
 		}
 	}
@@ -338,7 +338,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 	return db.CopyByLogger(logger)
 }
 
-//func getPool(typ, host, user, pwd, db string) (*sql.DB, error) {
+// func getPool(typ, host, user, pwd, db string) (*sql.DB, error) {
 func getPool(conf *dbInfo) (*sql.DB, error) {
 	return getPoolForHost(conf, "")
 }
@@ -485,7 +485,7 @@ func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
 }
 
 func (db *DB) Insert(table string, data interface{}) *ExecResult {
-	requestSql, values := makeInsertSql(table, data, false)
+	requestSql, values := MakeInsertSql(table, data, false)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {
@@ -499,7 +499,7 @@ func (db *DB) Insert(table string, data interface{}) *ExecResult {
 	return r
 }
 func (db *DB) Replace(table string, data interface{}) *ExecResult {
-	requestSql, values := makeInsertSql(table, data, true)
+	requestSql, values := MakeInsertSql(table, data, true)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {
@@ -514,7 +514,7 @@ func (db *DB) Replace(table string, data interface{}) *ExecResult {
 }
 
 func (db *DB) Update(table string, data interface{}, wheres string, args ...interface{}) *ExecResult {
-	requestSql, values := makeUpdateSql(table, data, wheres, args...)
+	requestSql, values := MakeUpdateSql(table, data, wheres, args...)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {

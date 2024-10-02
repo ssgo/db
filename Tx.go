@@ -115,7 +115,7 @@ func (tx *Tx) Query(requestSql string, args ...interface{}) *QueryResult {
 }
 
 func (tx *Tx) Insert(table string, data interface{}) *ExecResult {
-	requestSql, values := makeInsertSql(table, data, false)
+	requestSql, values := MakeInsertSql(table, data, false)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
@@ -131,7 +131,7 @@ func (tx *Tx) Insert(table string, data interface{}) *ExecResult {
 	return r
 }
 func (tx *Tx) Replace(table string, data interface{}) *ExecResult {
-	requestSql, values := makeInsertSql(table, data, true)
+	requestSql, values := MakeInsertSql(table, data, true)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
@@ -148,7 +148,7 @@ func (tx *Tx) Replace(table string, data interface{}) *ExecResult {
 }
 
 func (tx *Tx) Update(table string, data interface{}, wheres string, args ...interface{}) *ExecResult {
-	requestSql, values := makeUpdateSql(table, data, wheres, args...)
+	requestSql, values := MakeUpdateSql(table, data, wheres, args...)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
