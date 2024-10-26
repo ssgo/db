@@ -4,13 +4,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ssgo/config"
-	"github.com/ssgo/log"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ssgo/config"
+	"github.com/ssgo/log"
 
 	"github.com/ssgo/u"
 )
@@ -198,8 +199,42 @@ func GetDB(name string, logger *log.Logger) *DB {
 		dbConfigsLock.RUnlock()
 		if n == 0 {
 			once.Do(func() {
-				errs := config.LoadConfig("db", &dbConfigs)
-				if errs != nil {
+				dbConfigs1 := make(map[string]*dbInfo)
+				if errs := config.LoadConfig("db", &dbConfigs1); errs == nil {
+					for k, v := range dbConfigs1 {
+						if v.Host != "" {
+							dbConfigsLock.Lock()
+							dbConfigs[k] = v
+							dbConfigsLock.Unlock()
+						}
+					}
+				} else {
+					for _, err := range errs {
+						logger.Error(err.Error())
+					}
+				}
+				dbConfigs2 := make(map[string]string)
+				if errs := config.LoadConfig("db", &dbConfigs2); errs == nil {
+					for k, v := range dbConfigs2 {
+						if strings.Contains(v, "://") {
+							v2 := new(dbInfo)
+							v2.ConfigureBy(v)
+							if v2.Host != "" {
+								v2.logger = logger
+								dbConfigsLock.Lock()
+								dbConfigs[k] = v2
+								dbConfigsLock.Unlock()
+							}
+						} else {
+							dbConfigsLock.Lock()
+							v2 := dbConfigs[v]
+							if v2 != nil && v2.Host != "" {
+								dbConfigs[k] = v2
+							}
+							dbConfigsLock.Unlock()
+						}
+					}
+				} else {
 					for _, err := range errs {
 						logger.Error(err.Error())
 					}
@@ -216,18 +251,23 @@ func GetDB(name string, logger *log.Logger) *DB {
 			dbConfigsLock.Unlock()
 		}
 	}
+
 	if conf.Host == "" {
-		conf.Host = "127.0.0.1:3306"
+		logger.Error("db config not exists")
+		return nil
 	}
-	if conf.Type == "" {
-		conf.Type = "mysql"
-	}
-	if conf.User == "" {
-		conf.User = "root"
-	}
-	if conf.DB == "" {
-		conf.DB = "test"
-	}
+	// if conf.Host == "" {
+	// 	conf.Host = "127.0.0.1:3306"
+	// }
+	// if conf.Type == "" {
+	// 	conf.Type = "mysql"
+	// }
+	// if conf.User == "" {
+	// 	conf.User = "root"
+	// }
+	// if conf.DB == "" {
+	// 	conf.DB = "test"
+	// }
 
 	if conf.SSL != "" && len(dbSSLs) == 0 {
 		config.LoadConfig("dbssl", &dbSSLs)
