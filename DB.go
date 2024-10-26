@@ -253,7 +253,9 @@ func GetDB(name string, logger *log.Logger) *DB {
 	}
 
 	if conf.Host == "" {
-		logger.Error("db config not exists")
+		if name != "default" {
+			logger.Error("db config not exists", "name", name)
+		}
 		return nil
 	}
 	// if conf.Host == "" {
