@@ -55,9 +55,9 @@ func (dbInfo *dbInfo) Dsn() string {
 		argsStr = "&" + strings.Join(args, "&")
 	}
 
-	if strings.HasPrefix(dbInfo.Type, "sqlite") {
+	if isFileDB(dbInfo.Type) {
 		argsStr = sqlite3PwdMatcher.ReplaceAllString(argsStr, "******")
-		return fmt.Sprintf("%s://%s:****@%s?logSlow=%s", dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
+		return fmt.Sprintf("%s://%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
 		//return fmt.Sprintf("%s://%s:****@%s?logSlow=%s"+argsStr, dbInfo.Type, dbInfo.User, dbInfo.Host, dbInfo.LogSlow.TimeDuration())
 	} else {
 		//if []byte(conf.Host)[0] == '/' {
@@ -71,6 +71,30 @@ func (dbInfo *dbInfo) Dsn() string {
 	}
 }
 
+var fileDBs = map[string]bool{
+	"sqlite":     true,
+	"sqlite3":    true,
+	"chai":       true,
+	"access":     true, // Microsoft Access
+	"mdb":        true, // Access 扩展名
+	"accdb":      true, // Access 较新扩展名
+	"h2":         true, // H2 Database
+	"hsqldb":     true, // HSQLDB
+	"derby":      true, // Apache Derby
+	"sqlce":      true, // SQL Server Compact
+	"sdf":        true, // SQL CE 扩展名
+	"firebird":   true, // Firebird Embedded
+	"fdb":        true, // Firebird 扩展名
+	"dbase":      true, // dBase
+	"dbf":        true, // dBase 扩展名
+	"berkeleydb": true, // Berkeley DB
+	"bdb":        true, // Berkeley DB 别名
+}
+
+func isFileDB(typ string) bool {
+	return fileDBs[typ]
+}
+
 func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	urlInfo, err := url.Parse(setting)
 	if err != nil {
@@ -79,7 +103,7 @@ func (dbInfo *dbInfo) ConfigureBy(setting string) {
 	}
 
 	dbInfo.Type = urlInfo.Scheme
-	if strings.HasPrefix(dbInfo.Type, "sqlite") {
+	if isFileDB(dbInfo.Type) {
 		dbInfo.Host = urlInfo.Host + urlInfo.Path
 		dbInfo.DB = strings.SplitN(urlInfo.Host, ".", 2)[0]
 	} else {
@@ -136,6 +160,7 @@ type DB struct {
 	Config              *dbInfo
 	logger              *dbLogger
 	Error               error
+	QuoteTag            string
 }
 
 // var settedKey = []byte("vpL54DlR2KG{JSAaAX7Tu;*#&DnG`M0o")
@@ -311,7 +336,7 @@ func GetDB(name string, logger *log.Logger) *DB {
 		}
 	} else {
 		// sqlite or default config for mysql don't warning empty password
-		if !strings.HasPrefix(conf.Type, "sqlite") && conf.Host != "127.0.0.1:3306" && conf.User == "root" {
+		if !isFileDB(conf.Type) && conf.Host != "127.0.0.1:3306" && conf.User == "root" {
 			logger.Warning("password is empty")
 		}
 	}
@@ -337,10 +362,12 @@ func GetDB(name string, logger *log.Logger) *DB {
 	conn, err := getPool(conf)
 	if err != nil {
 		logger.DBError(err.Error(), conf.Type, conf.Dsn(), "", nil, 0)
-		return &DB{conn: nil, Error: err}
+		return &DB{conn: nil, QuoteTag: "\"", Error: err}
 	}
 
 	db := new(DB)
+	db.QuoteTag = u.StringIf(conf.Type == "mysql", "`", "\"")
+	// db.QuoteTag = u.StringIf(conf.Type == "mysql" || strings.HasPrefix(conf.Type, "sqlite"), "`", "\"")
 	db.name = name
 	db.conn = conn
 
@@ -406,7 +433,7 @@ func getPoolForHost(conf *dbInfo, host string) (*sql.DB, error) {
 	if len(args) > 0 {
 		argsStr = "?" + strings.Join(args, "&")
 	}
-	if strings.HasPrefix(conf.Type, "sqlite") {
+	if isFileDB(conf.Type) {
 		dsn = host + argsStr
 		//fmt.Println("   >>>>>>>>", dsn)
 		//if conf.pwd != "" {
@@ -419,12 +446,12 @@ func getPoolForHost(conf *dbInfo, host string) (*sql.DB, error) {
 		//}
 		dsn = fmt.Sprintf("%s:%s@%s(%s)/%s"+argsStr, conf.User, conf.pwd, connectType, host, conf.DB)
 	}
-	//fmt.Println(222, dsn)
 	return sql.Open(conf.Type, dsn)
 }
 
 func (db *DB) CopyByLogger(logger *log.Logger) *DB {
 	newDB := new(DB)
+	newDB.QuoteTag = db.QuoteTag
 	newDB.name = db.name
 	newDB.conn = db.conn
 	newDB.readonlyConnections = db.readonlyConnections
@@ -475,16 +502,24 @@ func (db *DB) Prepare(requestSql string) *Stmt {
 	return stmt
 }
 
+func (db *DB) Quote(text string) string {
+	return quote(db.QuoteTag, text)
+}
+
+func (db *DB) Quotes(texts []string) string {
+	return quotes(db.QuoteTag, texts)
+}
+
 func (db *DB) Begin() *Tx {
 	if db.conn == nil {
-		return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), Error: errors.New("operate on a bad connection"), logger: db.logger}
+		return &Tx{QuoteTag: db.QuoteTag, logSlow: db.Config.LogSlow.TimeDuration(), Error: errors.New("operate on a bad connection"), logger: db.logger}
 	}
 	sqlTx, err := db.conn.Begin()
 	if err != nil {
 		db.logger.LogError(err.Error())
-		return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), Error: nil, logger: db.logger}
+		return &Tx{QuoteTag: db.QuoteTag, logSlow: db.Config.LogSlow.TimeDuration(), Error: nil, logger: db.logger}
 	}
-	return &Tx{logSlow: db.Config.LogSlow.TimeDuration(), conn: sqlTx, logger: db.logger}
+	return &Tx{QuoteTag: db.QuoteTag, logSlow: db.Config.LogSlow.TimeDuration(), conn: sqlTx, logger: db.logger}
 }
 
 func (db *DB) Exec(requestSql string, args ...interface{}) *ExecResult {
@@ -527,7 +562,7 @@ func (db *DB) Query(requestSql string, args ...interface{}) *QueryResult {
 }
 
 func (db *DB) Insert(table string, data interface{}) *ExecResult {
-	requestSql, values := MakeInsertSql(table, data, false)
+	requestSql, values := db.MakeInsertSql(table, data, false)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {
@@ -540,8 +575,9 @@ func (db *DB) Insert(table string, data interface{}) *ExecResult {
 	}
 	return r
 }
+
 func (db *DB) Replace(table string, data interface{}) *ExecResult {
-	requestSql, values := MakeInsertSql(table, data, true)
+	requestSql, values := db.MakeInsertSql(table, data, true)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {
@@ -556,7 +592,7 @@ func (db *DB) Replace(table string, data interface{}) *ExecResult {
 }
 
 func (db *DB) Update(table string, data interface{}, wheres string, args ...interface{}) *ExecResult {
-	requestSql, values := MakeUpdateSql(table, data, wheres, args...)
+	requestSql, values := db.MakeUpdateSql(table, data, wheres, args...)
 	r := baseExec(db.conn, nil, requestSql, values...)
 	r.logger = db.logger
 	if r.Error != nil {
@@ -574,7 +610,7 @@ func (db *DB) Delete(table string, wheres string, args ...interface{}) *ExecResu
 	if wheres != "" {
 		wheres = " where " + wheres
 	}
-	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
+	requestSql := fmt.Sprintf("delete from %s%s", db.Quote(table), wheres)
 	r := baseExec(db.conn, nil, requestSql, args...)
 	r.logger = db.logger
 	if r.Error != nil {

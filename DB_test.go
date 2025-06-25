@@ -1,20 +1,22 @@
 package db_test
 
 import (
-	"github.com/ssgo/db"
-	"github.com/ssgo/log"
-	"github.com/ssgo/u"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/ssgo/db"
+	"github.com/ssgo/log"
+	"github.com/ssgo/u"
+
+	_ "modernc.org/sqlite"
 )
 
 // var dbset = "mysql://root:@localhost/test?logSlow=1"
 // var dbset = "mysql://localhost/test"
-var dbset = "test"
+var dbset = "sqlite://test.db"
 
 type userInfo struct {
 	innerId int
@@ -56,8 +58,9 @@ func TestMakeInsertSql(t *testing.T) {
 		Salt:       "de312",
 	}
 
+	db := db.GetDB(dbset, nil)
 	requestSql, _ := db.MakeInsertSql("table_name", user, false)
-	if requestSql != "insert into `table_name` (`Id`,`Name`,`Password`,`Phone`,`Active`,`Parents`,`UserStatus`,`Owner`,`Salt`) values (?,?,?,?,?,?,?,?,?)" {
+	if requestSql != `insert into "table_name" ("Id","Name","Password","Phone","Active","Parents","UserStatus","Owner","Salt") values (?,?,?,?,?,?,?,?,?)` {
 		t.Fatal("MakeInsertSql requestSql error ", requestSql)
 	}
 }
@@ -66,7 +69,7 @@ func TestBaseSelect(t *testing.T) {
 
 	//n1 := countConnection()
 	sql := "SELECT 1002 id, '13800000001' phone"
-	db := db.GetDB("test2", nil)
+	db := db.GetDB(dbset, nil)
 	if db.Error != nil {
 		t.Fatal("GetDB error", db.Error)
 		return
@@ -192,7 +195,8 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		"phone":   18033336666,
 		"name":    "Star",
 		"parents": []string{"dd", "mm"},
-		"time":    ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
+		// "time":    ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
+		"time": ":(strftime('%Y-%m-%d %H:%M:%f', datetime('now', '-1 day'), 'localtime'))",
 	})
 	if er.Error != nil {
 		t.Fatal("Insert 1 error", er)
@@ -274,6 +278,7 @@ func TestInsertReplaceUpdateDelete(t *testing.T) {
 		t.Fatal("Select userList error", r)
 	}
 	r.To(&userList)
+	fmt.Println(">>>>", u.JsonP(userList), 111)
 	if strings.Split(userList[0].Time, " ")[0] != time.Now().Add(time.Hour*24*-1).Format("2006-01-02") || userList[0].Id != 1 || userList[0].Name != "Star" || userList[0].Phone == nil || *userList[0].Phone != "18033336666" || userList[0].Active != false {
 		t.Fatal("Select userList 0 error", userList, r)
 	}
@@ -307,7 +312,8 @@ func TestTransaction(t *testing.T) {
 	tx.Insert("tempUsersForDBTest", map[string]interface{}{
 		"phone": 18033336666,
 		"name":  "Star",
-		"time":  ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
+		// "time":  ":DATE_SUB(NOW(), INTERVAL 1 DAY)",
+		"time": ":(strftime('%Y-%m-%d %H:%M:%f', datetime('now', '-1 day'), 'localtime'))",
 	})
 
 	userList = make([]userInfo, 0)
@@ -372,15 +378,23 @@ func initDB(t *testing.T) *db.DB {
 	}
 
 	finishDB(db, t)
+	// er := db.Exec(`CREATE TABLE IF NOT EXISTS tempUsersForDBTest (
+	// 			id INT NOT NULL AUTO_INCREMENT,
+	// 			name VARCHAR(45) NOT NULL,
+	// 			phone VARCHAR(45),
+	// 			email VARCHAR(45),
+	// 			parents JSON,
+	// 			active TINYINT NOT NULL DEFAULT 0,
+	// 			time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	// 			PRIMARY KEY (id));`)
 	er := db.Exec(`CREATE TABLE IF NOT EXISTS tempUsersForDBTest (
-				id INT NOT NULL AUTO_INCREMENT,
+				id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 				name VARCHAR(45) NOT NULL,
 				phone VARCHAR(45),
 				email VARCHAR(45),
 				parents JSON,
 				active TINYINT NOT NULL DEFAULT 0,
-				time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-				PRIMARY KEY (id));`)
+				time DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f')));`)
 	if er.Error != nil {
 		t.Fatal("Failed to create table", er)
 	}

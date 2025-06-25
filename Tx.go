@@ -15,6 +15,15 @@ type Tx struct {
 	logger                 *dbLogger
 	logSlow                time.Duration
 	isCommitedOrRollbacked bool
+	QuoteTag               string
+}
+
+func (tx *Tx) Quote(text string) string {
+	return quote(tx.QuoteTag, text)
+}
+
+func (tx *Tx) Quotes(texts []string) string {
+	return quotes(tx.QuoteTag, texts)
 }
 
 func (tx *Tx) Commit() error {
@@ -115,7 +124,7 @@ func (tx *Tx) Query(requestSql string, args ...interface{}) *QueryResult {
 }
 
 func (tx *Tx) Insert(table string, data interface{}) *ExecResult {
-	requestSql, values := MakeInsertSql(table, data, false)
+	requestSql, values := tx.MakeInsertSql(table, data, false)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
@@ -131,7 +140,7 @@ func (tx *Tx) Insert(table string, data interface{}) *ExecResult {
 	return r
 }
 func (tx *Tx) Replace(table string, data interface{}) *ExecResult {
-	requestSql, values := MakeInsertSql(table, data, true)
+	requestSql, values := tx.MakeInsertSql(table, data, true)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
@@ -148,7 +157,7 @@ func (tx *Tx) Replace(table string, data interface{}) *ExecResult {
 }
 
 func (tx *Tx) Update(table string, data interface{}, wheres string, args ...interface{}) *ExecResult {
-	requestSql, values := MakeUpdateSql(table, data, wheres, args...)
+	requestSql, values := tx.MakeUpdateSql(table, data, wheres, args...)
 	tx.lastSql = &requestSql
 	tx.lastArgs = values
 	r := baseExec(nil, tx.conn, requestSql, values...)
@@ -168,7 +177,7 @@ func (tx *Tx) Delete(table string, wheres string, args ...interface{}) *ExecResu
 	if wheres != "" {
 		wheres = " where " + wheres
 	}
-	requestSql := fmt.Sprintf("delete from %s%s", makeTableName(table), wheres)
+	requestSql := fmt.Sprintf("delete from %s%s", tx.Quote(table), wheres)
 	tx.lastSql = &requestSql
 	tx.lastArgs = args
 	r := baseExec(nil, tx.conn, requestSql, args...)

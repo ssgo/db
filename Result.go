@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mitchellh/mapstructure"
-	"github.com/ssgo/u"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	"github.com/ssgo/u"
 )
 
 type QueryResult struct {
@@ -372,11 +373,14 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 				if found {
 					valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 					if !valuePtr.IsNil() {
-						//fmt.Println("=====2", valuePtr.String(), valuePtr.Elem().Kind(), data.FieldByName(publicColName).Kind())
+						// fmt.Println("=====2", field.Type.String(), valuePtr.String(), valuePtr.Elem().Kind(), data.FieldByName(publicColName).Kind(), valuePtr.Elem().Interface())
 						if field.Type.String() == "time.Time" {
 							// 转换时间
-							tm, err := time.Parse("2006-01-02 15:04:05", valuePtr.Elem().String())
+							tm, err := time.Parse("2006-01-02 15:04:05.000000", valuePtr.Elem().String())
 							if err != nil {
+								tm, err = time.Parse("2006-01-02 15:04:05", valuePtr.Elem().String())
+							}
+							if err == nil {
 								data.FieldByName(publicColName).Set(reflect.ValueOf(tm))
 							}
 						} else if valuePtr.Elem().Kind() != data.FieldByName(publicColName).Kind() && data.FieldByName(publicColName).Kind() != reflect.Interface {
@@ -393,8 +397,9 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 										data.FieldByName(publicColName).Set(valuePtr.Elem().Addr())
 									} else if valuePtr.Elem().Type().String() == "string" {
 										// 处理字符串类型
+										strVal := fixValue(col.DatabaseTypeName(), valuePtr.Elem())
 										data.FieldByName(publicColName).Set(reflect.New(data.FieldByName(publicColName).Type().Elem()))
-										data.FieldByName(publicColName).Elem().SetString(u.String(valuePtr.Elem().Interface()))
+										data.FieldByName(publicColName).Elem().SetString(u.String(strVal.Interface()))
 										//} else if strings.Contains(valuePtr.Elem().Type().String(), "uint") {
 									} else if strings.Contains(data.FieldByName(publicColName).Type().String(), "uint") {
 										// 处理整数类型
@@ -436,10 +441,16 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 							}
 						} else if field.Type.AssignableTo(valuePtr.Elem().Type()) {
 							// 类型完全匹配
-							data.FieldByName(publicColName).Set(valuePtr.Elem())
+							if valuePtr.Elem().Kind() == reflect.String {
+								data.FieldByName(publicColName).Set(fixValue(col.DatabaseTypeName(), valuePtr.Elem()))
+							} else {
+								data.FieldByName(publicColName).Set(valuePtr.Elem())
+							}
 						} else if valuePtr.Elem().Type().String() == "string" {
+							// fmt.Println("=====4", col.DatabaseTypeName(), valuePtr.Elem())
 							// 处理字符串类型
-							data.FieldByName(publicColName).SetString(valuePtr.Elem().String())
+							// data.FieldByName(publicColName).SetString(fixValue(col.DatabaseTypeName(), valuePtr.Elem()).String())
+							data.FieldByName(publicColName).Set(fixValue(col.DatabaseTypeName(), valuePtr.Elem()))
 						} else if strings.Contains(valuePtr.Elem().Type().String(), "int") {
 							// 处理整数类型
 							data.FieldByName(publicColName).SetInt(valuePtr.Elem().Int())
@@ -448,6 +459,7 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 							data.FieldByName(publicColName).SetFloat(valuePtr.Elem().Float())
 						} else {
 							// TODO 是否有其他特俗情况？
+							// fmt.Println("=====6", col.DatabaseTypeName(), valuePtr.Elem())
 							data.FieldByName(publicColName).Set(valuePtr.Elem())
 						}
 					}
@@ -464,27 +476,28 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 			for colIndex, col := range colTypes {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
-					data.SetMapIndex(reflect.ValueOf(col.Name()), valuePtr.Elem())
+					// fmt.Println("=====2", col.Name(), col.DatabaseTypeName(), valuePtr.Elem().Kind(), valuePtr.Elem().Interface())
+					data.SetMapIndex(reflect.ValueOf(col.Name()), fixValue(col.DatabaseTypeName(), valuePtr.Elem()))
 				} else {
-					data.SetMapIndex(reflect.ValueOf(col.Name()), reflect.New(rowType.Elem()).Elem())
+					data.SetMapIndex(reflect.ValueOf(col.Name()), fixValue(col.DatabaseTypeName(), reflect.New(rowType.Elem()).Elem()))
 				}
 			}
 		} else if rowType.Kind() == reflect.Slice {
 			// 结果放入Slice
 			data = reflect.MakeSlice(rowType, colNum, colNum)
-			for colIndex := range colTypes {
+			for colIndex, col := range colTypes {
 				valuePtr := reflect.ValueOf(scanValues[colIndex]).Elem()
 				if !valuePtr.IsNil() {
-					data.Index(colIndex).Set(valuePtr.Elem())
+					data.Index(colIndex).Set(fixValue(col.DatabaseTypeName(), valuePtr.Elem()))
 				} else {
-					data.Index(colIndex).Set(reflect.New(rowType.Elem()).Elem())
+					data.Index(colIndex).Set(fixValue(col.DatabaseTypeName(), reflect.New(rowType.Elem()).Elem()))
 				}
 			}
 		} else {
 			// 只返回一列结果
 			valuePtr := reflect.ValueOf(scanValues[0]).Elem()
 			if !valuePtr.IsNil() {
-				data = valuePtr.Elem()
+				data = fixValue(colTypes[0].DatabaseTypeName(), valuePtr.Elem())
 			}
 		}
 
@@ -504,6 +517,37 @@ func (r *QueryResult) makeResults(results interface{}, rows *sql.Rows) error {
 		reflect.ValueOf(results).Elem().Set(resultsValue)
 	}
 	return nil
+}
+
+// fix datetime value for sqlite
+func fixValue(colType string, v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.String {
+		switch colType {
+		case "DATE":
+			str := v.String()
+			if len(str) >= 10 && str[4] == '-' && str[7] == '-' {
+				return reflect.ValueOf(str[:10])
+			}
+		case "DATETIME":
+			str := v.String()
+			if len(str) >= 19 && str[10] == 'T' && str[4] == '-' && str[7] == '-' && str[13] == ':' && str[16] == ':' {
+				str = strings.TrimRight(str, "Z")
+				if len(str) > 19 && str[19] == '.' {
+					return reflect.ValueOf(str[:10] + " " + str[11:])
+				}
+				return reflect.ValueOf(str[:10] + " " + str[11:19])
+			}
+		case "TIME":
+			str := v.String()
+			if len(str) >= 8 && str[2] == ':' && str[4] == ':' {
+				if len(str) >= 15 && str[8] == '.' {
+					return reflect.ValueOf(str[0:15])
+				}
+				return reflect.ValueOf(str[0:8])
+			}
+		}
+	}
+	return v
 }
 
 func (r *QueryResult) getColumnTypes() ([]*sql.ColumnType, error) {

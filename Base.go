@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ssgo/log"
-	"github.com/ssgo/u"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/ssgo/log"
+	"github.com/ssgo/u"
 )
 
 func basePrepare(db *sql.DB, tx *sql.Tx, requestSql string) *Stmt {
@@ -102,19 +103,22 @@ func baseQuery(db *sql.DB, tx *sql.Tx, requestSql string, args ...interface{}) *
 	return &QueryResult{Sql: &requestSql, Args: args, usedTime: log.MakeUesdTime(startTime, endTime), rows: rows}
 }
 
-func makeTableName(table string) string {
-	if table[0] != '`' {
-		a := strings.SplitN(table, ".", 2)
-		a[0] = fmt.Sprintf("`%s`", a[0])
-		if len(a) == 2 {
-			a[1] = fmt.Sprintf("`%s`", a[1])
-		}
-		table = strings.Join(a, ".")
+func quote(quoteTag string, text string) string {
+	a := strings.Split(text, ".")
+	for i, v := range a {
+		a[i] = quoteTag + strings.ReplaceAll(v, quoteTag, "\\"+quoteTag) + quoteTag
 	}
-	return table
+	return strings.Join(a, ".")
 }
 
-func MakeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
+func quotes(quoteTag string, texts []string) string {
+	for i, v := range texts {
+		texts[i] = quote(quoteTag, v)
+	}
+	return strings.Join(texts, ",")
+}
+
+func makeInsertSql(quoteTag string, table string, data interface{}, useReplace bool) (string, []interface{}) {
 	keys, vars, values := MakeKeysVarsValues(data)
 	var operation string
 	if useReplace {
@@ -122,15 +126,15 @@ func MakeInsertSql(table string, data interface{}, useReplace bool) (string, []i
 	} else {
 		operation = "insert"
 	}
-	requestSql := fmt.Sprintf("%s into %s (`%s`) values (%s)", operation, makeTableName(table), strings.Join(keys, "`,`"), strings.Join(vars, ","))
+	requestSql := fmt.Sprintf("%s into %s (%s) values (%s)", operation, quote(quoteTag, table), quotes(quoteTag, keys), strings.Join(vars, ","))
 	return requestSql, values
 }
 
-func MakeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
+func makeUpdateSql(quoteTag string, table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
 	args = flatArgs(args)
 	keys, vars, values := MakeKeysVarsValues(data)
 	for i, k := range keys {
-		keys[i] = fmt.Sprintf("`%s`=%s", k, vars[i])
+		keys[i] = fmt.Sprintf("%s=%s", quote(quoteTag, k), vars[i])
 	}
 	for _, v := range args {
 		values = append(values, v)
@@ -138,8 +142,24 @@ func MakeUpdateSql(table string, data interface{}, wheres string, args ...interf
 	if wheres != "" {
 		wheres = " where " + wheres
 	}
-	requestSql := fmt.Sprintf("update %s set %s%s", makeTableName(table), strings.Join(keys, ","), wheres)
+	requestSql := fmt.Sprintf("update %s set %s%s", quote(quoteTag, table), strings.Join(keys, ","), wheres)
 	return requestSql, values
+}
+
+func (db *DB) MakeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
+	return makeInsertSql(db.QuoteTag, table, data, useReplace)
+}
+
+func (db *DB) MakeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
+	return makeUpdateSql(db.QuoteTag, table, data, wheres, args...)
+}
+
+func (tx *Tx) MakeInsertSql(table string, data interface{}, useReplace bool) (string, []interface{}) {
+	return makeInsertSql(tx.QuoteTag, table, data, useReplace)
+}
+
+func (tx *Tx) MakeUpdateSql(table string, data interface{}, wheres string, args ...interface{}) (string, []interface{}) {
+	return makeUpdateSql(tx.QuoteTag, table, data, wheres, args...)
 }
 
 func getFlatFields(fields map[string]reflect.Value, fieldKeys *[]string, value reflect.Value) {
