@@ -261,6 +261,8 @@ func (r *QueryResult) ToKV(target interface{}) error {
 				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.Bool(item[1])))
 			case reflect.String:
 				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(u.String(item[1])))
+			case reflect.Interface:
+				v.SetMapIndex(reflect.ValueOf(u.String(item[0])), reflect.ValueOf(item[1]))
 			}
 		}
 	}
